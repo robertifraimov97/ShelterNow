@@ -1,28 +1,41 @@
-import { View, Text, Pressable } from "react-native";
+import { SafeAreaView, View, Text, Pressable, StyleSheet } from "react-native";
+import { styles } from "./home.styles";
 
 export default function HomeScreen() {
   return (
-    <View style={{ flex: 1, padding: 24, justifyContent: "center", gap: 16 }}>
-      <Text style={{ fontSize: 28, fontWeight: "700", textAlign: "center" }}>
-        ShelterNow
-      </Text>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.appName}>ShelterNow</Text>
+          <Text style={styles.subtitle}>Emergency shelter guidance</Text>
+        </View>
 
-      <Text style={{ fontSize: 16, textAlign: "center", opacity: 0.8 }}>
-        Find a nearby protected area quickly.
-      </Text>
+        <View style={styles.statusCard}>
+          <Text style={styles.statusLabel}>Status</Text>
+          <Text style={styles.statusValue}>All Clear</Text>
+        </View>
 
-      <Pressable
-        onPress={() => console.log("Start pressed")}
-        style={{
-          paddingVertical: 14,
-          borderRadius: 12,
-          alignItems: "center",
-          borderWidth: 1,
-        }}
-      >
-        <Text style={{ fontSize: 16, fontWeight: "600" }}>Start</Text>
-      </Pressable>
-    </View>
+        <View style={styles.mainCard}>
+          <Text style={styles.cardTitle}>Nearest Protected Area</Text>
+          <Text style={styles.cardName}>City Mall Shelter</Text>
+          <Text style={styles.cardMeta}>400 meters away</Text>
+          <Text style={styles.cardMeta}>Estimated arrival: 2 min</Text>
+
+          <Pressable
+            style={styles.primaryButton}
+            onPress={() => console.log("Navigate pressed")}
+          >
+            <Text style={styles.primaryButtonText}>Navigate to Shelter</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.mapSection}>
+          <Text style={styles.mapTitle}>Quick Map Preview</Text>
+          <View style={styles.mapPlaceholder}>
+            <Text style={styles.mapPlaceholderText}>Map preview will appear here</Text>
+          </View>
+        </View>
+      </View>
+    </SafeAreaView>
   );
 }
-/
