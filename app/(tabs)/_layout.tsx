@@ -1,8 +1,8 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function TabLayout() {
   return (
@@ -29,20 +29,41 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={26} name="house.fill" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <FontAwesome name="home" size={size} color={color} />
           ),
         }}
       />
+
       <Tabs.Screen
         name="explore"
         options={{
           title: 'Map',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={26} name="map.fill" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <FontAwesome name="map" size={size} color={color} />
           ),
         }}
       />
+
+    <Tabs.Screen
+        name="alerts"
+        options={{
+          title: 'Alerts',
+          tabBarIcon: ({ color, size }) => (
+            <FontAwesome name="bell" size={size} color={color} />
+           ),
+         }}
+       />
+    <Tabs.Screen
+          name="settings"
+          options={{
+            title: 'Settings',
+            tabBarIcon: ({ color, size }) => (
+              <FontAwesome name="gear" size={size} color={color} />
+            ),
+         }}
+        />
+     
     </Tabs>
   );
 }
