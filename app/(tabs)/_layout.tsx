@@ -45,25 +45,25 @@ export default function TabLayout() {
         }}
       />
 
-    <Tabs.Screen
+      <Tabs.Screen
         name="alerts"
         options={{
           title: 'Alerts',
           tabBarIcon: ({ color, size }) => (
             <FontAwesome name="bell" size={size} color={color} />
-           ),
-         }}
-       />
-    <Tabs.Screen
-          name="settings"
-          options={{
-            title: 'Settings',
-            tabBarIcon: ({ color, size }) => (
-              <FontAwesome name="gear" size={size} color={color} />
-            ),
-         }}
-        />
-     
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => (
+            <FontAwesome name="user" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

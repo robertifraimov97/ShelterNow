@@ -1,7 +1,11 @@
-import { SafeAreaView, View, Text, Pressable, StyleSheet } from "react-native";
+import { SafeAreaView, View, Text, Pressable } from "react-native";
+import { useRouter } from "expo-router";
+import MapView from "react-native-maps";
 import { styles } from "./home.styles";
 
 export default function HomeScreen() {
+  const router = useRouter();
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -16,24 +20,41 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.mainCard}>
-          <Text style={styles.cardTitle}>Nearest Protected Area</Text>
+          <Text style={styles.cardTitle}>Nearest Shelter</Text>
           <Text style={styles.cardName}>City Mall Shelter</Text>
-          <Text style={styles.cardMeta}>400 meters away</Text>
-          <Text style={styles.cardMeta}>Estimated arrival: 2 min</Text>
+          <Text style={styles.cardMeta}>400m • 2 min walk</Text>
+          <Text style={styles.cardSource}>Official source</Text>
 
-          <Pressable
-            style={styles.primaryButton}
-            onPress={() => console.log("Navigate pressed")}
-          >
-            <Text style={styles.primaryButtonText}>Navigate to Shelter</Text>
-          </Pressable>
+          <View style={styles.goButtonWrapper}>
+            <View style={styles.emergencyButtonHalo}>
+              <Pressable
+                style={styles.emergencyButton}
+                onPress={() => console.log("Start route pressed")}
+              >
+                <Text style={styles.emergencyButtonText}>Start</Text>
+                <Text style={styles.emergencyButtonText}>Route</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
 
         <View style={styles.mapSection}>
           <Text style={styles.mapTitle}>Quick Map Preview</Text>
-          <View style={styles.mapPlaceholder}>
-            <Text style={styles.mapPlaceholderText}>Map preview will appear here</Text>
-          </View>
+
+          <Pressable onPress={() => router.push("/full-map")}>
+            <View style={styles.mapContainer}>
+              <MapView
+                style={styles.map}
+                initialRegion={{
+                  latitude: 32.0853,
+                  longitude: 34.7818,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                }}
+                pointerEvents="none"
+              />
+            </View>
+          </Pressable>
         </View>
       </View>
     </SafeAreaView>

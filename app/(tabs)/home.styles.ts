@@ -43,37 +43,64 @@ export const styles = StyleSheet.create({
   mainCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
-    padding: 20,
+    padding: 18,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    gap: 8,
+    gap: 6,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 24,
+    fontWeight: "800",
     color: "#0F172A",
-    marginBottom: 4,
+    marginBottom: 6,
   },
   cardName: {
     fontSize: 22,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#1E3A8A",
   },
   cardMeta: {
     fontSize: 15,
     color: "#475569",
   },
-  primaryButton: {
-    marginTop: 14,
-    backgroundColor: "#16A34A",
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
+  cardSource: {
+    fontSize: 14,
+    color: "#64748B",
+    marginTop: 2,
   },
-  primaryButtonText: {
+  goButtonWrapper: {
+    alignItems: "center",
+    marginTop: 12,
+  },
+  emergencyButtonHalo: {
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    backgroundColor: "rgba(52, 168, 83, 0.14)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emergencyButton: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: "#34A853",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    elevation: 5,
+  },
+  emergencyButtonText: {
     color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 18,
+    fontWeight: "800",
+    lineHeight: 22,
   },
   mapSection: {
     gap: 10,
@@ -83,17 +110,14 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#0F172A",
   },
-  mapPlaceholder: {
+  mapContainer: {
     height: 150,
-    backgroundColor: "#DCE7F5",
     borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
+    overflow: "hidden",
     borderWidth: 1,
     borderColor: "#C7D2E0",
   },
-  mapPlaceholderText: {
-    fontSize: 15,
-    color: "#475569",
+  map: {
+    flex: 1,
   },
 });

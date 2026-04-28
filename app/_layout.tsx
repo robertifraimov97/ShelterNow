@@ -14,10 +14,14 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="full-map" options={{ headerShown: false }} />
+            <Stack.Screen name="shelters-list" options={{ headerShown: false }} />
+            <Stack.Screen name="profile-settings" options={{ headerShown: false }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+            <Stack.Screen name="add-community-shelter" options={{ headerShown: false }} />
+          </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
   );

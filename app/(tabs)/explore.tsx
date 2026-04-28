@@ -1,9 +1,13 @@
-import { SafeAreaView, View, Text, StyleSheet, ScrollView } from 'react-native';
+import { SafeAreaView, View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { useRouter } from 'expo-router';
+import MapView from 'react-native-maps';
 
 export default function MapScreen() {
+  const router = useRouter();
+
   return (
     <SafeAreaView style={styles.container}>
-    <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>Nearby Protected Areas</Text>
           <Text style={styles.subtitle}>
@@ -13,13 +17,29 @@ export default function MapScreen() {
 
         <View style={styles.mapSection}>
           <Text style={styles.mapLabel}>Map View</Text>
-          <View style={styles.mapPlaceholder}>
-            <Text style={styles.mapPlaceholderText}>Map will appear here</Text>
-          </View>
+
+          <Pressable onPress={() => router.push('/full-map')}>
+            <View style={styles.mapContainer}>
+              <MapView
+                style={styles.map}
+                initialRegion={{
+                  latitude: 32.0853,
+                  longitude: 34.7818,
+                  latitudeDelta: 0.02,
+                  longitudeDelta: 0.02,
+                }}
+              />
+            </View>
+          </Pressable>
         </View>
 
-        <View style={styles.listSection}>
-          <Text style={styles.sectionTitle}>Nearby Options</Text>
+          <View style={styles.listSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Nearby Options</Text>
+              <Pressable onPress={() => router.push('/shelters-list')}>
+                <Text style={styles.seeAllText}>See all</Text>
+              </Pressable>
+            </View>
 
           <View style={styles.areaCard}>
             <Text style={styles.areaName}>City Mall Shelter</Text>
@@ -33,9 +53,9 @@ export default function MapScreen() {
             <Text style={styles.areaInfo}>Source: Community</Text>
           </View>
         </View>
-          </ScrollView>
-        </SafeAreaView>
-    );
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -69,18 +89,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
-  mapPlaceholder: {
+  mapContainer: {
     height: 280,
-    backgroundColor: '#DCE7F5',
     borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#C7D2E0',
   },
-  mapPlaceholderText: {
-    fontSize: 16,
-    color: '#475569',
+  map: {
+    flex: 1,
   },
   listSection: {
     gap: 12,
@@ -106,5 +123,14 @@ const styles = StyleSheet.create({
   areaInfo: {
     fontSize: 14,
     color: '#475569',
-  },
+  },sectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    seeAllText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#2563EB',
+    },
 });
