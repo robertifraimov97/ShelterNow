@@ -122,19 +122,22 @@ export default function SheltersListScreen() {
           </View>
         </View>
 
-        <View style={styles.listSection}>
-          {filteredShelters.map((shelter) => (
-            <View key={shelter.id} style={styles.shelterCard}>
-              <Text style={styles.shelterName}>{shelter.name}</Text>
-              <Text style={styles.shelterInfo}>{shelter.distance}</Text>
-              <Text style={styles.shelterInfo}>
-                {shelter.source === 'official'
-                  ? 'Official source'
-                  : 'Community source'}
-              </Text>
-            </View>
-          ))}
-        </View>
+          <View style={styles.listSection}>
+            {filteredShelters.map((shelter) => (
+              <Pressable
+                key={shelter.id}
+                style={styles.shelterCard}
+                onPress={() => router.push('/shelter-details')}>
+                <Text style={styles.shelterName}>{shelter.name}</Text>
+                <Text style={styles.shelterInfo}>{shelter.distance}</Text>
+                <Text style={styles.shelterInfo}>
+                  {shelter.source === 'official'
+                    ? 'Official source'
+                    : 'Community source'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
       </ScrollView>
     </SafeAreaView>
   );

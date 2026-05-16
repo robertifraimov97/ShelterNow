@@ -21,6 +21,12 @@ export default function RootLayout() {
             <Stack.Screen name="profile-settings" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
             <Stack.Screen name="add-community-shelter" options={{ headerShown: false }} />
+            <Stack.Screen name="shelter-details" options={{ headerShown: false }} />
+            <Stack.Screen name="shelter-management" options={{ headerShown: false }} />
+            <Stack.Screen name="my-submitted-shelters" options={{ headerShown: false }} />
+            <Stack.Screen name="edit-submitted-shelter" options={{ headerShown: false }} />
+            <Stack.Screen name="followed-areas" options={{ headerShown: false }} />
+            <Stack.Screen name="add-followed-area" options={{ headerShown: false }} />
           </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
