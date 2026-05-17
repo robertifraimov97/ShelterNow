@@ -41,3 +41,11 @@ app-example
 # generated native folders
 /ios
 /android
+.DS_Store
+node_modules/
+venv/
+backend/venv/
+__pycache__/
+*.pyc
+.env
+backend/.env
