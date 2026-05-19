@@ -10,22 +10,61 @@ import {
   Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { API_BASE_URL } from '../constants/api';
 
 export default function AddCommunityShelterScreen() {
   const router = useRouter();
 
   const [shelterName, setShelterName] = useState('');
+  const [city, setCity] = useState('');
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [isAccessible, setIsAccessible] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = () => {
-    console.log('Community shelter submitted', {
-      shelterName,
-      address,
-      notes,
-      isAccessible,
-    });
+  const handleSubmit = async () => {
+    if (!shelterName.trim() || !city.trim()) {
+      console.log('Shelter name and city are required');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const response = await fetch(`${API_BASE_URL}/submitted-shelters/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: shelterName.trim(),
+          city: city.trim(),
+          address: address.trim() || null,
+          latitude: null,
+          longitude: null,
+          notes: notes.trim() || null,
+          accessibility_notes: isAccessible
+            ? 'Marked as accessible by the submitter'
+            : null,
+          submitted_by_name: null,
+          submitted_by_email: null,
+          submission_status: 'pending',
+          review_notes: null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.log('Failed to submit community shelter:', errorData);
+        return;
+      }
+
+      router.back();
+    } catch (error) {
+      console.log('Network error while submitting community shelter:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -50,6 +89,16 @@ export default function AddCommunityShelterScreen() {
               placeholder="Enter shelter name"
               value={shelterName}
               onChangeText={setShelterName}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>City</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter city"
+              value={city}
+              onChangeText={setCity}
             />
           </View>
 
@@ -88,8 +137,17 @@ export default function AddCommunityShelterScreen() {
           </View>
         </View>
 
-        <Pressable style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>Submit Shelter</Text>
+        <Pressable
+          style={[
+            styles.submitButton,
+            (loading || !shelterName.trim() || !city.trim()) &&
+              styles.submitButtonDisabled,
+          ]}
+          onPress={handleSubmit}
+          disabled={loading || !shelterName.trim() || !city.trim()}>
+          <Text style={styles.submitButtonText}>
+            {loading ? 'Submitting...' : 'Submit Shelter'}
+          </Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -194,6 +252,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 16,
     alignItems: 'center',
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#94A3B8',
   },
   submitButtonText: {
     color: '#FFFFFF',

@@ -1,6 +1,85 @@
 import { SafeAreaView, View, Text, StyleSheet, ScrollView } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import * as Location from 'expo-location';
+import { API_BASE_URL } from '../../constants/api';
+
+type FollowedArea = {
+  id: number;
+  user_identifier: string;
+  area_name: string;
+  city_code?: string | null;
+  label?: string | null;
+  created_at: string;
+};
 
 export default function AlertsScreen() {
+  const [followedAreas, setFollowedAreas] = useState<FollowedArea[]>([]);
+  const [loadingFollowedAreas, setLoadingFollowedAreas] = useState(true);
+  const [currentAreaName, setCurrentAreaName] = useState('Loading location...');
+
+  const loadFollowedAreas = async () => {
+    try {
+      setLoadingFollowedAreas(true);
+
+      const response = await fetch(`${API_BASE_URL}/followed-areas/`);
+      const data = await response.json();
+
+      setFollowedAreas(data);
+    } catch (error) {
+      console.log('Failed to load followed areas for alerts:', error);
+    } finally {
+      setLoadingFollowedAreas(false);
+    }
+  };
+
+  const loadCurrentArea = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== 'granted') {
+        setCurrentAreaName('Location unavailable');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+      const reverseGeocoded = await Location.reverseGeocodeAsync({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+
+      if (reverseGeocoded.length > 0) {
+        const place = reverseGeocoded[0];
+        const cityName =
+          place.city || place.subregion || place.region || 'Unknown area';
+
+        setCurrentAreaName(cityName);
+      } else {
+        setCurrentAreaName('Unknown area');
+      }
+    } catch (error) {
+      console.log('Failed to load current area:', error);
+      setCurrentAreaName('Location unavailable');
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadFollowedAreas();
+      loadCurrentArea();
+    }, [])
+  );
+
+  const recentAlerts = followedAreas.slice(0, 3).map((area, index) => {
+    const mockTimes = ['18:42', '17:55', '17:20'];
+
+    return {
+      id: area.id,
+      area_name: area.area_name,
+      time: mockTimes[index] || '16:40',
+    };
+  });
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -14,48 +93,58 @@ export default function AlertsScreen() {
         <View style={styles.statusCard}>
           <Text style={styles.cardLabel}>Current Area</Text>
           <Text style={styles.statusValue}>No active alert</Text>
-          <Text style={styles.cardInfo}>Tel Aviv</Text>
+          <Text style={styles.cardInfo}>{currentAreaName}</Text>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Followed Areas</Text>
 
-          <View style={styles.alertCard}>
-            <Text style={styles.areaName}>Haifa</Text>
-            <Text style={styles.alertStatusActive}>Active alert</Text>
-            <Text style={styles.alertTime}>Updated 2 min ago</Text>
-          </View>
+          {loadingFollowedAreas ? (
+            <Text style={styles.helperText}>Loading followed areas...</Text>
+          ) : followedAreas.length === 0 ? (
+            <Text style={styles.helperText}>No followed areas yet.</Text>
+          ) : (
+            followedAreas.map((area, index) => {
+              const isActiveAlert = index === 0;
 
-          <View style={styles.alertCard}>
-            <Text style={styles.areaName}>North District</Text>
-            <Text style={styles.alertStatusCalm}>No active alert</Text>
-            <Text style={styles.alertTime}>Updated 5 min ago</Text>
-          </View>
+              return (
+                <View key={area.id} style={styles.alertCard}>
+                  <Text style={styles.areaName}>{area.area_name}</Text>
 
-          <View style={styles.alertCard}>
-            <Text style={styles.areaName}>Jerusalem</Text>
-            <Text style={styles.alertStatusCalm}>No active alert</Text>
-            <Text style={styles.alertTime}>Updated 9 min ago</Text>
-          </View>
+                  <Text
+                    style={
+                      isActiveAlert
+                        ? styles.alertStatusActive
+                        : styles.alertStatusCalm
+                    }
+                  >
+                    {isActiveAlert ? 'Active alert' : 'No active alert'}
+                  </Text>
+
+                  <Text style={styles.alertTime}>
+                    {isActiveAlert ? 'Updated 2 min ago' : 'Updated 5 min ago'}
+                  </Text>
+                </View>
+              );
+            })
+          )}
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Alerts</Text>
 
-          <View style={styles.recentCard}>
-            <Text style={styles.recentArea}>Ramat Gan</Text>
-            <Text style={styles.recentTime}>18:42</Text>
-          </View>
-
-          <View style={styles.recentCard}>
-            <Text style={styles.recentArea}>Ashdod</Text>
-            <Text style={styles.recentTime}>17:55</Text>
-          </View>
-
-          <View style={styles.recentCard}>
-            <Text style={styles.recentArea}>Be’er Sheva</Text>
-            <Text style={styles.recentTime}>17:20</Text>
-          </View>
+          {loadingFollowedAreas ? (
+            <Text style={styles.helperText}>Loading recent alerts...</Text>
+          ) : recentAlerts.length === 0 ? (
+            <Text style={styles.helperText}>No recent alerts yet.</Text>
+          ) : (
+            recentAlerts.map((alert) => (
+              <View key={alert.id} style={styles.recentCard}>
+                <Text style={styles.recentArea}>{alert.area_name}</Text>
+                <Text style={styles.recentTime}>{alert.time}</Text>
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -113,6 +202,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#0F172A',
+  },
+  helperText: {
+    fontSize: 15,
+    color: '#64748B',
   },
   alertCard: {
     backgroundColor: '#FFFFFF',

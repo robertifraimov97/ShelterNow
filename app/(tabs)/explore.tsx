@@ -1,8 +1,47 @@
 import { SafeAreaView, View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
+import { API_BASE_URL } from '../../constants/api';
+
+type OfficialShelter = {
+  id: number;
+  name: string;
+  city: string;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  shelter_type: string;
+  source_type: string;
+  source_name?: string | null;
+  source_url?: string | null;
+  accessibility_notes?: string | null;
+  status: string;
+  last_verified_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type NearbyShelter = {
+  id: number;
+  name: string;
+  city: string;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  distance_meters: number;
+  estimated_walk_minutes: number;
+  source: string;
+};
+
+function formatDistance(distanceMeters: number) {
+  if (distanceMeters < 1000) {
+    return `${distanceMeters} meters away`;
+  }
+
+  return `${(distanceMeters / 1000).toFixed(1)} km away`;
+}
 
 export default function MapScreen() {
   const router = useRouter();
@@ -13,6 +52,9 @@ export default function MapScreen() {
   } | null>(null);
 
   const [showCenterButton, setShowCenterButton] = useState(false);
+  const [officialShelters, setOfficialShelters] = useState<OfficialShelter[]>([]);
+  const [nearbyShelters, setNearbyShelters] = useState<NearbyShelter[]>([]);
+  const [loadingShelters, setLoadingShelters] = useState(true);
 
   const mapRef = useRef<MapView | null>(null);
 
@@ -26,7 +68,6 @@ export default function MapScreen() {
       }
 
       const location = await Location.getCurrentPositionAsync({});
-      console.log('User location:', location);
 
       setUserLocation({
         latitude: location.coords.latitude,
@@ -36,6 +77,68 @@ export default function MapScreen() {
 
     getUserLocation();
   }, []);
+
+  const loadOfficialShelters = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/shelters/`);
+      const data = await response.json();
+
+      const sheltersWithCoordinates = data.filter(
+        (shelter: OfficialShelter) =>
+          shelter.latitude !== null && shelter.longitude !== null
+      );
+
+      setOfficialShelters(sheltersWithCoordinates);
+    } catch (error) {
+      console.log('Failed to load official shelters for map:', error);
+    }
+  };
+
+  const loadNearbyShelters = async (
+    latitude: number,
+    longitude: number
+  ) => {
+    try {
+      setLoadingShelters(true);
+
+      const response = await fetch(`${API_BASE_URL}/recommendations/nearby-shelters`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_latitude: latitude,
+          user_longitude: longitude,
+        }),
+      });
+
+      if (!response.ok) {
+        console.log('Failed to load nearby shelters recommendation');
+        setNearbyShelters([]);
+        return;
+      }
+
+      const data = await response.json();
+      setNearbyShelters(data);
+    } catch (error) {
+      console.log('Failed to load nearby shelters recommendation:', error);
+      setNearbyShelters([]);
+    } finally {
+      setLoadingShelters(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadOfficialShelters();
+    }, [])
+  );
+
+  useEffect(() => {
+    if (!userLocation) return;
+
+    loadNearbyShelters(userLocation.latitude, userLocation.longitude);
+  }, [userLocation]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -85,6 +188,19 @@ export default function MapScreen() {
                     title="Your Location"
                     description="Current user position"
                   />
+
+                  {officialShelters.map((shelter) => (
+                    <Marker
+                      key={shelter.id}
+                      coordinate={{
+                        latitude: shelter.latitude,
+                        longitude: shelter.longitude,
+                      }}
+                      title={shelter.name}
+                      description={`${shelter.address || shelter.city} • Official`}
+                      pinColor="blue"
+                    />
+                  ))}
                 </MapView>
 
                 {showCenterButton && (
@@ -130,21 +246,24 @@ export default function MapScreen() {
             </Pressable>
           </View>
 
-          <Pressable
-            style={styles.areaCard}
-            onPress={() => router.push('/shelter-details')}>
-            <Text style={styles.areaName}>City Mall Shelter</Text>
-            <Text style={styles.areaInfo}>400 meters away</Text>
-            <Text style={styles.areaInfo}>Source: Official</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.areaCard}
-            onPress={() => router.push('/shelter-details')}>
-            <Text style={styles.areaName}>Community Safe Room</Text>
-            <Text style={styles.areaInfo}>650 meters away</Text>
-            <Text style={styles.areaInfo}>Source: Community</Text>
-          </Pressable>
+          {loadingShelters ? (
+            <Text style={styles.helperText}>Loading nearby shelters...</Text>
+          ) : nearbyShelters.length === 0 ? (
+            <Text style={styles.helperText}>No nearby shelters available yet.</Text>
+          ) : (
+            nearbyShelters.map((shelter) => (
+              <Pressable
+                key={shelter.id}
+                style={styles.areaCard}
+                onPress={() => router.push('/shelter-details')}>
+                <Text style={styles.areaName}>{shelter.name}</Text>
+                <Text style={styles.areaInfo}>
+                  {formatDistance(shelter.distance_meters)}
+                </Text>
+                <Text style={styles.areaInfo}>Source: {shelter.source}</Text>
+              </Pressable>
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -268,6 +387,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#2563EB',
+  },
+  helperText: {
+    fontSize: 15,
+    color: '#64748B',
   },
   areaCard: {
     backgroundColor: '#FFFFFF',

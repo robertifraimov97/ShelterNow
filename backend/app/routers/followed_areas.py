@@ -1,0 +1,51 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.db.database import get_db
+from app.db.models import FollowedArea
+from app.schemas.followed_area import FollowedAreaCreate, FollowedAreaResponse
+
+router = APIRouter(prefix="/followed-areas", tags=["Followed Areas"])
+
+
+@router.get("/", response_model=list[FollowedAreaResponse])
+def get_followed_areas(db: Session = Depends(get_db)):
+    followed_areas = db.query(FollowedArea).all()
+    return followed_areas
+
+
+@router.post("/", response_model=FollowedAreaResponse)
+def create_followed_area(
+    followed_area: FollowedAreaCreate,
+    db: Session = Depends(get_db)
+):
+    new_followed_area = FollowedArea(
+        user_identifier=followed_area.user_identifier,
+        area_name=followed_area.area_name,
+        city_code=followed_area.city_code,
+        label=followed_area.label,
+    )
+
+    db.add(new_followed_area)
+    db.commit()
+    db.refresh(new_followed_area)
+
+    return new_followed_area
+
+
+@router.delete("/{followed_area_id}")
+def delete_followed_area(
+    followed_area_id: int,
+    db: Session = Depends(get_db)
+):
+    followed_area = db.query(FollowedArea).filter(
+        FollowedArea.id == followed_area_id
+    ).first()
+
+    if not followed_area:
+        raise HTTPException(status_code=404, detail="Followed area not found")
+
+    db.delete(followed_area)
+    db.commit()
+
+    return {"message": "Followed area deleted successfully"}

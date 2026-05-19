@@ -1,22 +1,65 @@
 import { SafeAreaView, View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { followedAreasData, removeFollowedArea, type FollowedArea } from '../data/followed-areas-data';
+import { API_BASE_URL } from '../constants/api';
+
+type FollowedArea = {
+  id: number;
+  user_identifier: string;
+  area_name: string;
+  city_code?: string | null;
+  label?: string | null;
+  created_at: string;
+};
 
 export default function FollowedAreasScreen() {
   const router = useRouter();
-  const [areas, setAreas] = useState<FollowedArea[]>(followedAreasData);
+  const [areas, setAreas] = useState<FollowedArea[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const loadFollowedAreas = async () => {
+    try {
+      setLoading(true);
+
+      const response = await fetch(`${API_BASE_URL}/followed-areas/`);
+      const data = await response.json();
+
+      setAreas(data);
+    } catch (error) {
+      console.log('Failed to load followed areas:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveArea = async (id: number) => {
+    try {
+      setDeletingId(id);
+
+      const response = await fetch(`${API_BASE_URL}/followed-areas/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.log('Failed to delete followed area:', errorData);
+        return;
+      }
+
+      setAreas((prevAreas) => prevAreas.filter((area) => area.id !== id));
+    } catch (error) {
+      console.log('Network error while deleting followed area:', error);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
-      setAreas([...followedAreasData]);
+      loadFollowedAreas();
     }, [])
   );
-
-  const handleRemove = (id: number) => {
-    removeFollowedArea(id);
-    setAreas([...followedAreasData]);
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -39,21 +82,32 @@ export default function FollowedAreasScreen() {
         </Pressable>
 
         <View style={styles.listSection}>
-          {areas.map((area) => (
-            <View key={area.id} style={styles.areaCard}>
-              <Text style={styles.areaName}>{area.name}</Text>
+          {loading ? (
+            <Text style={styles.helperText}>Loading followed areas...</Text>
+          ) : areas.length === 0 ? (
+            <Text style={styles.helperText}>No followed areas yet.</Text>
+          ) : (
+            areas.map((area) => (
+              <View key={area.id} style={styles.areaCard}>
+                <Text style={styles.areaName}>{area.area_name}</Text>
 
-              <View style={styles.statusBadge}>
-                <Text style={styles.statusBadgeText}>{area.status}</Text>
+                {area.label ? (
+                  <View style={styles.statusBadge}>
+                    <Text style={styles.statusBadgeText}>{area.label}</Text>
+                  </View>
+                ) : null}
+
+                <Pressable
+                  style={styles.removeButton}
+                  onPress={() => handleRemoveArea(area.id)}
+                  disabled={deletingId === area.id}>
+                  <Text style={styles.removeButtonText}>
+                    {deletingId === area.id ? 'Removing...' : 'Remove'}
+                  </Text>
+                </Pressable>
               </View>
-
-              <Pressable
-                style={styles.removeButton}
-                onPress={() => handleRemove(area.id)}>
-                <Text style={styles.removeButtonText}>Remove</Text>
-              </Pressable>
-            </View>
-          ))}
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -109,6 +163,10 @@ const styles = StyleSheet.create({
   },
   listSection: {
     gap: 12,
+  },
+  helperText: {
+    fontSize: 15,
+    color: '#64748B',
   },
   areaCard: {
     backgroundColor: '#FFFFFF',

@@ -10,13 +10,17 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { israeliCities } from '../data/israeli-cities';
-import { addFollowedArea } from '../data/followed-areas-data';
+import { API_BASE_URL } from '../constants/api';
 
 export default function AddFollowedAreaScreen() {
   const router = useRouter();
 
   const [searchText, setSearchText] = useState('');
-  const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  const [selectedCity, setSelectedCity] = useState<{
+    name: string;
+    cityCode: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const filteredCities = useMemo(() => {
     if (!searchText.trim()) {
@@ -28,20 +32,40 @@ export default function AddFollowedAreaScreen() {
     );
   }, [searchText]);
 
-  const handleAddArea = () => {
+  const handleAddArea = async () => {
     if (!selectedCity) {
       console.log('No city selected');
       return;
     }
 
-    const added = addFollowedArea(selectedCity);
+    try {
+      setLoading(true);
 
-    if (!added) {
-      console.log('Area already exists');
-      return;
+      const response = await fetch(`${API_BASE_URL}/followed-areas/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_identifier: 'robert_local',
+          area_name: selectedCity.name,
+          city_code: selectedCity.cityCode,
+          label: null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.log('Failed to add followed area:', errorData);
+        return;
+      }
+
+      router.back();
+    } catch (error) {
+      console.log('Network error while adding followed area:', error);
+    } finally {
+      setLoading(false);
     }
-
-    router.back();
   };
 
   return (
@@ -72,7 +96,7 @@ export default function AddFollowedAreaScreen() {
           <Text style={styles.resultsTitle}>Matching Areas</Text>
 
           {filteredCities.map((city) => {
-            const isSelected = selectedCity === city.name;
+            const isSelected = selectedCity?.name === city.name;
 
             return (
               <Pressable
@@ -81,7 +105,12 @@ export default function AddFollowedAreaScreen() {
                   styles.cityItem,
                   isSelected && styles.cityItemSelected,
                 ]}
-                onPress={() => setSelectedCity(city.name)}>
+                onPress={() =>
+                  setSelectedCity({
+                    name: city.name,
+                    cityCode: city.cityCode,
+                  })
+                }>
                 <Text
                   style={[
                     styles.cityName,
@@ -98,11 +127,13 @@ export default function AddFollowedAreaScreen() {
         <Pressable
           style={[
             styles.addButton,
-            !selectedCity && styles.addButtonDisabled,
+            (!selectedCity || loading) && styles.addButtonDisabled,
           ]}
           onPress={handleAddArea}
-          disabled={!selectedCity}>
-          <Text style={styles.addButtonText}>Add Area</Text>
+          disabled={!selectedCity || loading}>
+          <Text style={styles.addButtonText}>
+            {loading ? 'Adding...' : 'Add Area'}
+          </Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

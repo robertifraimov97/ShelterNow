@@ -1,25 +1,56 @@
 import { SafeAreaView, View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { API_BASE_URL } from '../constants/api';
 
-const submittedShelters = [
-  {
-    id: 1,
-    name: 'Neighborhood Basement Shelter',
-    address: '12 Herzl St, Tel Aviv',
-    source: 'Community submission',
-    status: 'Pending review',
-  },
-  {
-    id: 2,
-    name: 'Parking Level Safe Room',
-    address: '8 Bialik St, Ramat Gan',
-    source: 'Community submission',
-    status: 'Approved in prototype',
-  },
-];
+type SubmittedShelter = {
+  id: number;
+  name: string;
+  city: string;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  notes?: string | null;
+  accessibility_notes?: string | null;
+  submitted_by_name?: string | null;
+  submitted_by_email?: string | null;
+  submission_status: string;
+  review_notes?: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export default function MySubmittedSheltersScreen() {
   const router = useRouter();
+  const [submittedShelters, setSubmittedShelters] = useState<SubmittedShelter[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadSubmittedShelters = async () => {
+    try {
+      setLoading(true);
+
+      const response = await fetch(`${API_BASE_URL}/submitted-shelters/`);
+      const data = await response.json();
+
+      setSubmittedShelters(data);
+    } catch (error) {
+      console.log('Failed to load submitted shelters:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSubmittedShelters();
+    }, [])
+  );
+
+  const getStatusLabel = (status: string) => {
+    if (status === 'approved') return 'Approved';
+    if (status === 'rejected') return 'Rejected';
+    return 'Pending review';
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -36,31 +67,41 @@ export default function MySubmittedSheltersScreen() {
         </View>
 
         <View style={styles.listSection}>
-          {submittedShelters.map((shelter) => (
-                <View key={shelter.id} style={styles.shelterCard}>
+          {loading ? (
+            <Text style={styles.helperText}>Loading submitted shelters...</Text>
+          ) : submittedShelters.length === 0 ? (
+            <Text style={styles.helperText}>No submitted shelters yet.</Text>
+          ) : (
+            submittedShelters.map((shelter) => (
+              <View key={shelter.id} style={styles.shelterCard}>
                 <Text style={styles.shelterName}>{shelter.name}</Text>
-                <Text style={styles.shelterInfo}>{shelter.address}</Text>
-                <Text style={styles.shelterInfo}>{shelter.source}</Text>
+                <Text style={styles.shelterInfo}>
+                  {shelter.address || shelter.city}
+                </Text>
+                <Text style={styles.shelterInfo}>Community submission</Text>
 
                 <View style={styles.statusBadge}>
-                <Text style={styles.statusBadgeText}>{shelter.status}</Text>
+                  <Text style={styles.statusBadgeText}>
+                    {getStatusLabel(shelter.submission_status)}
+                  </Text>
                 </View>
 
                 <View style={styles.actionsRow}>
-                    <Pressable
-                        style={styles.editButton}
-                        onPress={() => router.push('/edit-submitted-shelter')}>
-                        <Text style={styles.editButtonText}>Edit</Text>
-                    </Pressable>
+                  <Pressable
+                    style={styles.editButton}
+                    onPress={() => router.push('/edit-submitted-shelter')}>
+                    <Text style={styles.editButtonText}>Edit</Text>
+                  </Pressable>
 
-                    <Pressable
-                        style={styles.deleteButton}
-                        onPress={() => console.log('Delete pressed', shelter.id)}>
-                        <Text style={styles.deleteButtonText}>Delete</Text>
-                    </Pressable>
+                  <Pressable
+                    style={styles.deleteButton}
+                    onPress={() => console.log('Delete pressed', shelter.id)}>
+                    <Text style={styles.deleteButtonText}>Delete</Text>
+                  </Pressable>
                 </View>
-            </View>
-          ))}
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -105,6 +146,10 @@ const styles = StyleSheet.create({
   listSection: {
     gap: 12,
   },
+  helperText: {
+    fontSize: 15,
+    color: '#64748B',
+  },
   shelterCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -135,31 +180,31 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1D4ED8',
   },
-    actionsRow: {
-      flexDirection: 'row',
-      gap: 10,
-      marginTop: 6,
-    },
-    editButton: {
-      backgroundColor: '#E8F1FB',
-      paddingVertical: 10,
-      paddingHorizontal: 16,
-      borderRadius: 12,
-    },
-    editButtonText: {
-      color: '#1D4ED8',
-      fontSize: 14,
-      fontWeight: '700',
-    },
-    deleteButton: {
-      backgroundColor: '#FEE2E2',
-      paddingVertical: 10,
-      paddingHorizontal: 16,
-      borderRadius: 12,
-    },
-    deleteButtonText: {
-      color: '#B91C1C',
-      fontSize: 14,
-      fontWeight: '700',
-    },
+  actionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+  },
+  editButton: {
+    backgroundColor: '#E8F1FB',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  editButtonText: {
+    color: '#1D4ED8',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  deleteButton: {
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  deleteButtonText: {
+    color: '#B91C1C',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 });
