@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.db.models import Shelter
 from app.schemas.recommendation import (
     BestShelterRequest,
+    NearbySheltersRequest,
     BestShelterResponse,
     NearbyShelterResponse,
 )
@@ -49,7 +50,7 @@ def get_best_shelter_recommendation(
 
 @router.post("/nearby-shelters", response_model=list[NearbyShelterResponse])
 def get_nearby_shelters_recommendation(
-    request: BestShelterRequest,
+    request: NearbySheltersRequest,
     db: Session = Depends(get_db),
 ):
     shelters = db.query(Shelter).all()
@@ -60,7 +61,8 @@ def get_nearby_shelters_recommendation(
         user_longitude=request.user_longitude,
     )
 
-    top_shelters = ranked_shelters[:3]
+    safe_limit = max(1, min(request.limit, 50))
+    top_shelters = ranked_shelters[:safe_limit]
 
     return [
         {

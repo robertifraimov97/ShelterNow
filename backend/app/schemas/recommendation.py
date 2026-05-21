@@ -7,6 +7,12 @@ class BestShelterRequest(BaseModel):
     user_longitude: float
 
 
+class NearbySheltersRequest(BaseModel):
+    user_latitude: float
+    user_longitude: float
+    limit: int = 3
+
+
 class BestShelterResponse(BaseModel):
     id: int
     name: str

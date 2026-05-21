@@ -36,6 +36,17 @@ type BestShelterRecommendation = {
   source: string;
 };
 
+type RoutePoint = {
+  latitude: number;
+  longitude: number;
+};
+
+type WalkingRouteResponse = {
+  distance_meters: number;
+  duration_seconds: number;
+  route_coordinates: RoutePoint[];
+};
+
 function formatDistance(distanceMeters: number) {
   if (distanceMeters < 1000) {
     return `${distanceMeters}m`;
@@ -55,6 +66,7 @@ export default function HomeScreen() {
   const [showCenterButton, setShowCenterButton] = useState(false);
   const [officialShelters, setOfficialShelters] = useState<OfficialShelter[]>([]);
   const [bestShelter, setBestShelter] = useState<BestShelterRecommendation | null>(null);
+  const [walkingRoute, setWalkingRoute] = useState<RoutePoint[]>([]);
   const [loadingBestShelter, setLoadingBestShelter] = useState(true);
 
   const mapRef = useRef<MapView | null>(null);
@@ -129,6 +141,40 @@ export default function HomeScreen() {
     }
   };
 
+  const loadWalkingRoute = async (
+    startLatitude: number,
+    startLongitude: number,
+    endLatitude: number,
+    endLongitude: number
+  ) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/routing/walking-route`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          start_latitude: startLatitude,
+          start_longitude: startLongitude,
+          end_latitude: endLatitude,
+          end_longitude: endLongitude,
+        }),
+      });
+
+      if (!response.ok) {
+        console.log('Failed to load walking route');
+        setWalkingRoute([]);
+        return;
+      }
+
+      const data: WalkingRouteResponse = await response.json();
+      setWalkingRoute(data.route_coordinates || []);
+    } catch (error) {
+      console.log('Failed to load walking route:', error);
+      setWalkingRoute([]);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       loadOfficialShelters();
@@ -143,6 +189,20 @@ export default function HomeScreen() {
       userLocation.longitude
     );
   }, [userLocation]);
+
+  useEffect(() => {
+    if (!userLocation || !bestShelter) {
+      setWalkingRoute([]);
+      return;
+    }
+
+    loadWalkingRoute(
+      userLocation.latitude,
+      userLocation.longitude,
+      bestShelter.latitude,
+      bestShelter.longitude
+    );
+  }, [userLocation, bestShelter]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -186,7 +246,21 @@ export default function HomeScreen() {
             <View style={styles.emergencyButtonHalo}>
               <Pressable
                 style={styles.emergencyButton}
-                onPress={() => console.log('Start route pressed')}>
+                onPress={() => {
+                  if (!bestShelter) {
+                    return;
+                  }
+
+                  router.push({
+                    pathname: '/navigation',
+                    params: {
+                      name: bestShelter.name,
+                      latitude: String(bestShelter.latitude),
+                      longitude: String(bestShelter.longitude),
+                    },
+                  });
+                }}
+              >
                 <Text style={styles.emergencyButtonText}>Start</Text>
                 <Text style={styles.emergencyButtonText}>Route</Text>
               </Pressable>
@@ -232,6 +306,7 @@ export default function HomeScreen() {
                     }}
                     title="Your Location"
                     description="Current user position"
+                    pinColor="red"
                   />
 
                   {officialShelters.map((shelter) => (
@@ -247,22 +322,13 @@ export default function HomeScreen() {
                     />
                   ))}
 
-                  {userLocation && bestShelter ? (
+                  {walkingRoute.length > 0 && (
                     <Polyline
-                      coordinates={[
-                        {
-                          latitude: userLocation.latitude,
-                          longitude: userLocation.longitude,
-                        },
-                        {
-                          latitude: bestShelter.latitude,
-                          longitude: bestShelter.longitude,
-                        },
-                      ]}
+                      coordinates={walkingRoute}
                       strokeWidth={4}
                       strokeColor="#2563EB"
                     />
-                  ) : null}
+                  )}
                 </MapView>
 
                 {showCenterButton && (

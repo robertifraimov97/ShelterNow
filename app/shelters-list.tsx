@@ -1,63 +1,84 @@
-import React, { useState } from 'react';
-import {
-  SafeAreaView,
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-} from 'react-native';
-import { useRouter } from 'expo-router';
+import { SafeAreaView, View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import * as Location from 'expo-location';
+import { API_BASE_URL } from '../constants/api';
 
-type ShelterSource = 'official' | 'community';
-
-type Shelter = {
+type NearbyShelter = {
   id: number;
   name: string;
-  distance: string;
-  source: ShelterSource;
+  city: string;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  distance_meters: number;
+  estimated_walk_minutes: number;
+  source: string;
 };
 
-const shelters: Shelter[] = [
-  {
-    id: 1,
-    name: 'City Mall Shelter',
-    distance: '400m away',
-    source: 'official',
-  },
-  {
-    id: 2,
-    name: 'Community Safe Room',
-    distance: '650m away',
-    source: 'community',
-  },
-  {
-    id: 3,
-    name: 'Central Public Shelter',
-    distance: '850m away',
-    source: 'official',
-  },
-  {
-    id: 4,
-    name: 'School Basement Shelter',
-    distance: '1.1 km away',
-    source: 'official',
-  },
-];
+function formatDistance(distanceMeters: number) {
+  if (distanceMeters < 1000) {
+    return `${distanceMeters} meters away`;
+  }
+
+  return `${(distanceMeters / 1000).toFixed(1)} km away`;
+}
 
 export default function SheltersListScreen() {
   const router = useRouter();
-  const [selectedSource, setSelectedSource] = useState<
-    'all' | 'official' | 'community'
-  >('all');
 
-  const filteredShelters = shelters.filter((shelter) => {
-    if (selectedSource === 'all') {
-      return true;
+  const [nearbyShelters, setNearbyShelters] = useState<NearbyShelter[]>([]);
+  const [loadingShelters, setLoadingShelters] = useState(true);
+  const [locationError, setLocationError] = useState('');
+
+  const loadNearbyShelters = async () => {
+    try {
+      setLoadingShelters(true);
+      setLocationError('');
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== 'granted') {
+        setLocationError('Location permission was denied.');
+        setNearbyShelters([]);
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+
+      const response = await fetch(`${API_BASE_URL}/recommendations/nearby-shelters`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_latitude: location.coords.latitude,
+          user_longitude: location.coords.longitude,
+          limit: 10,
+        }),
+      });
+
+      if (!response.ok) {
+        setNearbyShelters([]);
+        return;
+      }
+
+      const data = await response.json();
+      setNearbyShelters(data);
+    } catch (error) {
+      console.log('Failed to load shelters list:', error);
+      setNearbyShelters([]);
+      setLocationError('Failed to load nearby shelters.');
+    } finally {
+      setLoadingShelters(false);
     }
+  };
 
-    return shelter.source === selectedSource;
-  });
+  useFocusEffect(
+    useCallback(() => {
+      loadNearbyShelters();
+    }, [])
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -67,77 +88,47 @@ export default function SheltersListScreen() {
             <Text style={styles.backButtonText}>Back</Text>
           </Pressable>
 
-          <Text style={styles.title}>All Shelters</Text>
-          <Text style={styles.subtitle}>Browse nearby protected areas</Text>
+          <Text style={styles.title}>Nearby Shelters</Text>
+          <Text style={styles.subtitle}>
+            10 closest official shelters based on your current location
+          </Text>
         </View>
 
-        <View style={styles.filtersSection}>
-          <Text style={styles.filtersTitle}>Filter by</Text>
-
-          <View style={styles.filterRow}>
-            <Pressable
-              style={[
-                styles.filterPill,
-                selectedSource === 'all' && styles.filterPillActive,
-              ]}
-              onPress={() => setSelectedSource('all')}>
-              <Text
-                style={[
-                  styles.filterPillText,
-                  selectedSource === 'all' && styles.filterPillTextActive,
-                ]}>
-                All
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.filterPill,
-                selectedSource === 'official' && styles.filterPillActive,
-              ]}
-              onPress={() => setSelectedSource('official')}>
-              <Text
-                style={[
-                  styles.filterPillText,
-                  selectedSource === 'official' && styles.filterPillTextActive,
-                ]}>
-                Official
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.filterPill,
-                selectedSource === 'community' && styles.filterPillActive,
-              ]}
-              onPress={() => setSelectedSource('community')}>
-              <Text
-                style={[
-                  styles.filterPillText,
-                  selectedSource === 'community' && styles.filterPillTextActive,
-                ]}>
-                Community
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-
-          <View style={styles.listSection}>
-            {filteredShelters.map((shelter) => (
+        <View style={styles.listSection}>
+          {loadingShelters ? (
+            <Text style={styles.helperText}>Loading shelters...</Text>
+          ) : locationError ? (
+            <Text style={styles.helperText}>{locationError}</Text>
+          ) : nearbyShelters.length === 0 ? (
+            <Text style={styles.helperText}>No nearby shelters found.</Text>
+          ) : (
+            nearbyShelters.map((shelter) => (
               <Pressable
                 key={shelter.id}
                 style={styles.shelterCard}
-                onPress={() => router.push('/shelter-details')}>
+                onPress={() =>
+                  router.push({
+                    pathname: '/navigation',
+                    params: {
+                      name: shelter.name,
+                      latitude: String(shelter.latitude),
+                      longitude: String(shelter.longitude),
+                    },
+                  })
+                }
+              >
                 <Text style={styles.shelterName}>{shelter.name}</Text>
-                <Text style={styles.shelterInfo}>{shelter.distance}</Text>
                 <Text style={styles.shelterInfo}>
-                  {shelter.source === 'official'
-                    ? 'Official source'
-                    : 'Community source'}
+                  {shelter.address || shelter.city}
                 </Text>
+                <Text style={styles.shelterInfo}>
+                  {formatDistance(shelter.distance_meters)} • {shelter.estimated_walk_minutes} min walk
+                </Text>
+                <Text style={styles.shelterSource}>Source: {shelter.source}</Text>
               </Pressable>
-            ))}
-          </View>
+            ))
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -178,41 +169,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#64748B',
   },
-  filtersSection: {
-    gap: 10,
-  },
-  filtersTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  filterPill: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D9E6',
-  },
-  filterPillActive: {
-    backgroundColor: '#DBEAFE',
-    borderColor: '#2563EB',
-  },
-  filterPillText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  filterPillTextActive: {
-    color: '#1D4ED8',
-  },
   listSection: {
     gap: 12,
+  },
+  helperText: {
+    fontSize: 15,
+    color: '#64748B',
   },
   shelterCard: {
     backgroundColor: '#FFFFFF',
@@ -225,10 +187,15 @@ const styles = StyleSheet.create({
   shelterName: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   shelterInfo: {
     fontSize: 14,
     color: '#475569',
+  },
+  shelterSource: {
+    fontSize: 14,
+    color: '#1D4ED8',
+    fontWeight: '600',
   },
 });
