@@ -5,9 +5,18 @@ from pathlib import Path
 from app.db.database import SessionLocal
 from app.db.models import Shelter
 from app.services.geocoding import geocode_address
+import sys
 
 
-DATA_FILE = Path("backend/data/tel_aviv_official_shelters_updated.json")
+# Read the JSON file path from the command line.
+# Allows importing shelter data from any city.
+
+if len(sys.argv) < 2:
+    print("Usage:")
+    print("python -m app.scripts.import_official_shelters <json_file>")
+    sys.exit(1)
+
+DATA_FILE = Path(sys.argv[1])
 
 
 def get_shelter_unique_key(item: dict) -> str:
@@ -64,8 +73,10 @@ def main():
                 print(f"Skipped existing shelter in DB: {name} | {address} | {city}")
                 continue
 
+            geocoding_address = item.get("geocoding_address") or address
+
             coordinates = geocode_address(
-                address=address,
+                address=geocoding_address,
                 city=city,
             )
 

@@ -1,7 +1,11 @@
+
 import json
 import os
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 ORS_BASE_URL = os.getenv(
