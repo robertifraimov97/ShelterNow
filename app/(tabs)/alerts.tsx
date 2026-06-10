@@ -13,72 +13,171 @@ type FollowedArea = {
   created_at: string;
 };
 
+type AlertRelevance = {
+  priority: 'emergency' | 'followed_area' | 'none';
+  match_strategy: string;
+  current_location_match: boolean;
+  current_location_alert: string | null;
+  matched_followed_areas: string[];
+  show_nearest_shelter_button: boolean;
+};
+
+type AlertClassification = {
+  cat: string | null;
+  event_type: string;
+  severity: 'none' | 'info' | 'warning' | 'critical' | 'unknown';
+  severity_rank: number;
+  recommended_action: string;
+  confidence: 'high' | 'low';
+  matched_rule: string;
+  source_signals?: Record<string, any>;
+};
+
+type AlertExperience = {
+  focus_mode: 'normal' | 'current_location_warning' | 'current_location_emergency';
+  show_nearest_shelter_button: boolean;
+  should_offer_shelter_guidance: boolean;
+  allow_temporary_community_shelter_access: boolean;
+  close_emergency_mode: boolean;
+  hide_community_shelter_access: boolean;
+  show_followed_area_banner: boolean;
+  should_send_push_notification: boolean;
+  push_notification_type: string;
+};
+
+type AlertsResponse = {
+  alert: {
+    source: string;
+    raw: Record<string, any>;
+    has_active_alert: boolean;
+  };
+  relevance: AlertRelevance;
+  classification?: AlertClassification;
+  experience?: AlertExperience;
+};
+
 export default function AlertsScreen() {
   const [followedAreas, setFollowedAreas] = useState<FollowedArea[]>([]);
-  const [loadingFollowedAreas, setLoadingFollowedAreas] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [currentAreaName, setCurrentAreaName] = useState('Loading location...');
+  const [alertsResponse, setAlertsResponse] = useState<AlertsResponse | null>(null);
 
-  const loadFollowedAreas = async () => {
-    try {
-      setLoadingFollowedAreas(true);
+  const getCurrentAreaName = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
 
-      const response = await fetch(`${API_BASE_URL}/followed-areas/`);
-      const data = await response.json();
-
-      setFollowedAreas(data);
-    } catch (error) {
-      console.log('Failed to load followed areas for alerts:', error);
-    } finally {
-      setLoadingFollowedAreas(false);
+    if (status !== 'granted') {
+      return 'Location unavailable';
     }
+
+    const location = await Location.getCurrentPositionAsync({});
+    const reverseGeocoded = await Location.reverseGeocodeAsync({
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    });
+
+    if (reverseGeocoded.length === 0) {
+      return 'Unknown area';
+    }
+
+    const place = reverseGeocoded[0];
+
+    return place.city || place.subregion || place.region || 'Unknown area';
   };
 
-  const loadCurrentArea = async () => {
+  const loadInitialData = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLoading(true);
 
-      if (status !== 'granted') {
-        setCurrentAreaName('Location unavailable');
-        return;
+      const followedResponse = await fetch(`${API_BASE_URL}/followed-areas/`);
+      const followedData: FollowedArea[] = await followedResponse.json();
+
+      const cityName = await getCurrentAreaName();
+
+      setFollowedAreas(followedData);
+      setCurrentAreaName(cityName);
+
+      const params = new URLSearchParams();
+
+      if (
+        cityName &&
+        cityName !== 'Unknown area' &&
+        cityName !== 'Location unavailable'
+      ) {
+        params.append('current_city', cityName);
       }
 
-      const location = await Location.getCurrentPositionAsync({});
-      const reverseGeocoded = await Location.reverseGeocodeAsync({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
+      followedData.forEach((area) => {
+        params.append('followed_areas', area.area_name);
       });
 
-      if (reverseGeocoded.length > 0) {
-        const place = reverseGeocoded[0];
-        const cityName =
-          place.city || place.subregion || place.region || 'Unknown area';
+      const alertsResponse = await fetch(`${API_BASE_URL}/alerts/?${params.toString()}`);
+      const alertsData: AlertsResponse = await alertsResponse.json();
 
-        setCurrentAreaName(cityName);
-      } else {
-        setCurrentAreaName('Unknown area');
-      }
+      setAlertsResponse(alertsData);
     } catch (error) {
-      console.log('Failed to load current area:', error);
-      setCurrentAreaName('Location unavailable');
+      console.log('Failed to load alerts screen data:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   useFocusEffect(
     useCallback(() => {
-      loadFollowedAreas();
-      loadCurrentArea();
+      loadInitialData();
     }, [])
   );
 
-  const recentAlerts = followedAreas.slice(0, 3).map((area, index) => {
-    const mockTimes = ['18:42', '17:55', '17:20'];
+  const priority = alertsResponse?.relevance.priority || 'none';
+  const hasActiveAlert = alertsResponse?.alert.has_active_alert || false;
+  const rawAlert = alertsResponse?.alert.raw || {};
+  const alertTitle = rawAlert.title || 'No active alert';
+  const alertDescription = rawAlert.desc || '';
+  const affectedAreas: string[] = rawAlert.data || [];
+  const matchedFollowedAreas =
+    alertsResponse?.relevance.matched_followed_areas || [];
 
-    return {
-      id: area.id,
-      area_name: area.area_name,
-      time: mockTimes[index] || '16:40',
-    };
-  });
+  const classification = alertsResponse?.classification;
+  const experience = alertsResponse?.experience;
+
+  const focusMode = experience?.focus_mode || 'normal';
+
+  const isCurrentLocationEmergency =
+    focusMode === 'current_location_emergency';
+
+  const isCurrentLocationWarning =
+    focusMode === 'current_location_warning';
+
+  const shouldShowShelterButton =
+    experience?.show_nearest_shelter_button ||
+    alertsResponse?.relevance.show_nearest_shelter_button ||
+    false;
+
+  const shouldShowFollowedAreaBanner =
+    experience?.show_followed_area_banner ??
+    priority === 'followed_area';
+
+  const isEmergency = isCurrentLocationEmergency;
+  const isWarning = isCurrentLocationWarning || shouldShowFollowedAreaBanner;
+
+  const statusText = loading
+    ? 'Checking alerts...'
+    : isCurrentLocationEmergency
+      ? 'Emergency alert in your area'
+      : isCurrentLocationWarning
+        ? 'Prepare near shelter'
+        : shouldShowFollowedAreaBanner
+          ? 'Alert in followed area'
+          : 'No active alert';
+
+  const feedStatusText = isCurrentLocationEmergency
+    ? 'Emergency'
+    : isCurrentLocationWarning
+      ? 'Warning'
+      : classification?.event_type === 'event_ended'
+        ? 'Ended'
+        : hasActiveAlert
+          ? 'Active'
+          : 'Calm';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -86,43 +185,95 @@ export default function AlertsScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>Emergency Alerts</Text>
           <Text style={styles.subtitle}>
-            Track alerts in your area and in areas you follow
+            Real-time alerts for your location and followed areas
           </Text>
         </View>
 
-        <View style={styles.statusCard}>
+        <View
+          style={[
+            styles.statusCard,
+            isEmergency && styles.statusCardEmergency,
+            isWarning && !isEmergency && styles.statusCardWarning,
+          ]}
+        >
           <Text style={styles.cardLabel}>Current Area</Text>
-          <Text style={styles.statusValue}>No active alert</Text>
+
+          <Text
+            style={[
+              styles.statusValue,
+              isEmergency && styles.statusValueEmergency,
+              isWarning && !isEmergency && styles.statusValueWarning,
+            ]}
+          >
+            {statusText}
+          </Text>
+
           <Text style={styles.cardInfo}>{currentAreaName}</Text>
+
+          {hasActiveAlert && (
+            <View style={styles.alertDetailsBox}>
+              <Text style={styles.alertTitle}>{alertTitle}</Text>
+
+              {alertDescription ? (
+                <Text style={styles.alertDescription}>{alertDescription}</Text>
+              ) : null}
+
+              {affectedAreas.length > 0 ? (
+                <Text style={styles.affectedAreas}>
+                  Affected areas: {affectedAreas.join(', ')}
+                </Text>
+              ) : null}
+
+              {classification ? (
+                <Text style={styles.classificationInfo}>
+                  {classification.event_type} · {classification.severity}
+                </Text>
+              ) : null}
+            </View>
+          )}
+
+          {shouldShowShelterButton && (
+            <View style={styles.ctaButton}>
+              <Text style={styles.ctaButtonText}>Find nearest shelter</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Followed Areas</Text>
 
-          {loadingFollowedAreas ? (
+          {loading ? (
             <Text style={styles.helperText}>Loading followed areas...</Text>
           ) : followedAreas.length === 0 ? (
             <Text style={styles.helperText}>No followed areas yet.</Text>
           ) : (
-            followedAreas.map((area, index) => {
-              const isActiveAlert = index === 0;
+            followedAreas.map((area) => {
+              const hasMatchedAlert = matchedFollowedAreas.includes(area.area_name);
 
               return (
-                <View key={area.id} style={styles.alertCard}>
+                <View
+                  key={area.id}
+                  style={[
+                    styles.alertCard,
+                    hasMatchedAlert && styles.alertCardActive,
+                  ]}
+                >
                   <Text style={styles.areaName}>{area.area_name}</Text>
 
                   <Text
                     style={
-                      isActiveAlert
+                      hasMatchedAlert
                         ? styles.alertStatusActive
                         : styles.alertStatusCalm
                     }
                   >
-                    {isActiveAlert ? 'Active alert' : 'No active alert'}
+                    {hasMatchedAlert ? 'Active alert' : 'No active alert'}
                   </Text>
 
                   <Text style={styles.alertTime}>
-                    {isActiveAlert ? 'Updated 2 min ago' : 'Updated 5 min ago'}
+                    {hasMatchedAlert
+                      ? 'Relevant alert detected'
+                      : 'Currently calm'}
                   </Text>
                 </View>
               );
@@ -131,19 +282,32 @@ export default function AlertsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Alerts</Text>
+          <Text style={styles.sectionTitle}>Current Alert Feed</Text>
 
-          {loadingFollowedAreas ? (
-            <Text style={styles.helperText}>Loading recent alerts...</Text>
-          ) : recentAlerts.length === 0 ? (
-            <Text style={styles.helperText}>No recent alerts yet.</Text>
-          ) : (
-            recentAlerts.map((alert) => (
-              <View key={alert.id} style={styles.recentCard}>
-                <Text style={styles.recentArea}>{alert.area_name}</Text>
-                <Text style={styles.recentTime}>{alert.time}</Text>
+          {loading ? (
+            <Text style={styles.helperText}>Checking alert feed...</Text>
+          ) : hasActiveAlert ? (
+            <View style={styles.recentCard}>
+              <View style={styles.recentTextBlock}>
+                <Text style={styles.recentArea}>{alertTitle}</Text>
+                <Text style={styles.recentSubText}>
+                  {affectedAreas.length > 0
+                    ? affectedAreas.join(', ')
+                    : 'No affected areas listed'}
+                </Text>
               </View>
-            ))
+              <Text
+                style={[
+                  styles.recentTime,
+                  isCurrentLocationWarning && styles.recentTimeWarning,
+                  classification?.event_type === 'event_ended' && styles.recentTimeEnded,
+                ]}
+              >
+                {feedStatusText}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.helperText}>No active alerts right now.</Text>
           )}
         </View>
       </ScrollView>
@@ -180,7 +344,15 @@ const styles = StyleSheet.create({
     padding: 18,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    gap: 6,
+    gap: 8,
+  },
+  statusCardEmergency: {
+    borderColor: '#DC2626',
+    backgroundColor: '#FEF2F2',
+  },
+  statusCardWarning: {
+    borderColor: '#F59E0B',
+    backgroundColor: '#FFFBEB',
   },
   cardLabel: {
     fontSize: 14,
@@ -191,9 +363,48 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#16A34A',
   },
+  statusValueEmergency: {
+    color: '#DC2626',
+  },
+  statusValueWarning: {
+    color: '#D97706',
+  },
   cardInfo: {
     fontSize: 15,
     color: '#475569',
+  },
+  alertDetailsBox: {
+    marginTop: 8,
+    gap: 6,
+  },
+  alertTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  alertDescription: {
+    fontSize: 15,
+    color: '#334155',
+  },
+  affectedAreas: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  classificationInfo: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  ctaButton: {
+    marginTop: 10,
+    backgroundColor: '#DC2626',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  ctaButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
   section: {
     gap: 12,
@@ -214,6 +425,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     gap: 4,
+  },
+  alertCardActive: {
+    borderColor: '#DC2626',
+    backgroundColor: '#FEF2F2',
   },
   areaName: {
     fontSize: 18,
@@ -244,14 +459,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 12,
+  },
+  recentTextBlock: {
+    flex: 1,
+    gap: 4,
   },
   recentArea: {
     fontSize: 16,
     fontWeight: '600',
     color: '#0F172A',
   },
-  recentTime: {
+  recentSubText: {
     fontSize: 14,
     color: '#64748B',
+  },
+  recentTime: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
+  recentTimeWarning: {
+    color: '#D97706',
+  },
+  recentTimeEnded: {
+    color: '#16A34A',
   },
 });

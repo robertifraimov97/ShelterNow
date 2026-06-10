@@ -26,17 +26,23 @@ def get_current_alerts():
             raw = response.read().decode("utf-8-sig").strip()
 
         if not raw:
-            return {"source": "oref", "alerts": []}
+            return {
+                "source": "oref",
+                "raw": {},
+                "has_active_alert": False,
+            }
 
         return {
             "source": "oref",
             "raw": json.loads(raw),
+            "has_active_alert": True,
         }
 
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
         print("Failed to fetch alerts:", error)
         return {
             "source": "oref",
-            "alerts": [],
+            "raw": {},
+            "has_active_alert": False,
             "error": "Failed to fetch alerts",
         }
