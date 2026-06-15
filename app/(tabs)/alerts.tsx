@@ -136,6 +136,16 @@ export default function AlertsScreen() {
   const matchedFollowedAreas =
     alertsResponse?.relevance.matched_followed_areas || [];
 
+  const currentLocationAlert =
+    alertsResponse?.relevance.current_location_alert;
+
+  const relevantAreas = [
+    ...(currentLocationAlert ? [currentLocationAlert] : []),
+    ...matchedFollowedAreas,
+  ];
+
+  const uniqueRelevantAreas = Array.from(new Set(relevantAreas));
+
   const classification = alertsResponse?.classification;
   const experience = alertsResponse?.experience;
 
@@ -218,9 +228,9 @@ export default function AlertsScreen() {
                 <Text style={styles.alertDescription}>{alertDescription}</Text>
               ) : null}
 
-              {affectedAreas.length > 0 ? (
+              {uniqueRelevantAreas.length > 0 ? (
                 <Text style={styles.affectedAreas}>
-                  Affected areas: {affectedAreas.join(', ')}
+                  Relevant areas: {uniqueRelevantAreas.join(', ')}
                 </Text>
               ) : null}
 
@@ -249,13 +259,37 @@ export default function AlertsScreen() {
           ) : (
             followedAreas.map((area) => {
               const hasMatchedAlert = matchedFollowedAreas.includes(area.area_name);
+              const followedAreaSeverity = classification?.severity || 'none';
+              const followedAreaEventType = classification?.event_type || 'none';
+
+              const followedAreaStatusText =
+                hasMatchedAlert && followedAreaSeverity === 'critical'
+                  ? 'Active alert'
+                  : hasMatchedAlert && followedAreaSeverity === 'warning'
+                    ? 'Warning'
+                    : hasMatchedAlert && followedAreaSeverity === 'info'
+                      ? 'Update'
+                      : hasMatchedAlert
+                        ? 'Alert update'
+                        : 'No active alert';
+
+              const followedAreaSubText =
+                hasMatchedAlert && followedAreaEventType === 'prepare_near_shelter'
+                  ? 'Prepare near shelter'
+                  : hasMatchedAlert && followedAreaEventType === 'event_ended'
+                    ? 'Event ended'
+                    : hasMatchedAlert
+                      ? 'Relevant alert detected'
+                      : 'Currently calm';
 
               return (
                 <View
                   key={area.id}
                   style={[
                     styles.alertCard,
-                    hasMatchedAlert && styles.alertCardActive,
+                    hasMatchedAlert &&
+                    followedAreaSeverity === 'critical' &&
+                    styles.alertCardActive,
                   ]}
                 >
                   <Text style={styles.areaName}>{area.area_name}</Text>
@@ -267,13 +301,11 @@ export default function AlertsScreen() {
                         : styles.alertStatusCalm
                     }
                   >
-                    {hasMatchedAlert ? 'Active alert' : 'No active alert'}
+                    {followedAreaStatusText}
                   </Text>
 
                   <Text style={styles.alertTime}>
-                    {hasMatchedAlert
-                      ? 'Relevant alert detected'
-                      : 'Currently calm'}
+                    {followedAreaSubText}
                   </Text>
                 </View>
               );

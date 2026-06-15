@@ -21,3 +21,15 @@ print(classify_alert_relevance(
     current_city="רמת השרון",
     followed_areas=["כפר סבא", "הרצליה"],
 ))
+
+print(classify_alert_relevance(
+    affected_areas=["תל אביב - עבר הירקון"],
+    current_city="תל אביב",
+    followed_areas=[],
+))
+
+print(classify_alert_relevance(
+    affected_areas=["כוכב יאיר - צור יגאל"],
+    current_city="כוכב יאיר צור יגאל",
+    followed_areas=[],
+))
