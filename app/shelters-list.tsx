@@ -16,6 +16,24 @@ type NearbyShelter = {
   source: string;
 };
 
+type AlertsResponse = {
+  alert: {
+    source: string;
+    raw: Record<string, any>;
+    has_active_alert: boolean;
+  };
+  relevance: {
+    priority: 'emergency' | 'followed_area' | 'none';
+    current_location_match: boolean;
+    show_nearest_shelter_button: boolean;
+  };
+  experience?: {
+    focus_mode: 'normal' | 'current_location_warning' | 'current_location_emergency';
+    show_nearest_shelter_button: boolean;
+    should_offer_shelter_guidance: boolean;
+  };
+};
+
 function formatDistance(distanceMeters: number) {
   if (distanceMeters < 1000) {
     return `${distanceMeters} meters away`;
@@ -30,6 +48,39 @@ export default function SheltersListScreen() {
   const [nearbyShelters, setNearbyShelters] = useState<NearbyShelter[]>([]);
   const [loadingShelters, setLoadingShelters] = useState(true);
   const [locationError, setLocationError] = useState('');
+  const [isEmergencyMode, setIsEmergencyMode] = useState(false);
+
+  const loadAlertsState = async (cityName: string | null) => {
+    try {
+      const params = new URLSearchParams();
+
+      if (cityName) {
+        params.append('current_city', cityName);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/alerts/?${params.toString()}`);
+
+      if (!response.ok) {
+        setIsEmergencyMode(false);
+        return;
+      }
+
+      const data: AlertsResponse = await response.json();
+
+      const shouldUseEmergencyShelterFlow =
+        data.relevance.current_location_match ||
+        data.relevance.show_nearest_shelter_button ||
+        data.experience?.show_nearest_shelter_button ||
+        data.experience?.should_offer_shelter_guidance ||
+        data.experience?.focus_mode === 'current_location_emergency' ||
+        data.experience?.focus_mode === 'current_location_warning';
+
+      setIsEmergencyMode(Boolean(shouldUseEmergencyShelterFlow));
+    } catch (error) {
+      console.log('Failed to load alerts state for shelters list:', error);
+      setIsEmergencyMode(false);
+    }
+  };
 
   const loadNearbyShelters = async () => {
     try {
@@ -46,7 +97,59 @@ export default function SheltersListScreen() {
 
       const location = await Location.getCurrentPositionAsync({});
 
-      const response = await fetch(`${API_BASE_URL}/recommendations/nearby-shelters`, {
+      let cityName: string | null = null;
+
+      try {
+        const reverseGeocoded = await Location.reverseGeocodeAsync({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        });
+
+        if (reverseGeocoded.length > 0) {
+          const place = reverseGeocoded[0];
+          cityName = place.city || place.subregion || place.region || null;
+        }
+      } catch (error) {
+        console.log('Failed to reverse geocode current city for shelters list:', error);
+      }
+
+      await loadAlertsState(cityName);
+
+      const alertsParams = new URLSearchParams();
+      if (cityName) {
+        alertsParams.append('current_city', cityName);
+      }
+
+      let useEmergencyMode = false;
+
+      try {
+        const alertsResponse = await fetch(`${API_BASE_URL}/alerts/?${alertsParams.toString()}`);
+
+        if (alertsResponse.ok) {
+          const alertsData: AlertsResponse = await alertsResponse.json();
+
+          useEmergencyMode =
+            alertsData.relevance.current_location_match ||
+            alertsData.relevance.show_nearest_shelter_button ||
+            alertsData.experience?.show_nearest_shelter_button ||
+            alertsData.experience?.should_offer_shelter_guidance ||
+            alertsData.experience?.focus_mode === 'current_location_emergency' ||
+            alertsData.experience?.focus_mode === 'current_location_warning';
+
+          setIsEmergencyMode(Boolean(useEmergencyMode));
+        } else {
+          setIsEmergencyMode(false);
+        }
+      } catch (error) {
+        console.log('Failed to confirm alerts state for shelters list:', error);
+        setIsEmergencyMode(false);
+      }
+
+      const endpoint = useEmergencyMode
+        ? `${API_BASE_URL}/recommendations/nearby-emergency-shelters`
+        : `${API_BASE_URL}/recommendations/nearby-shelters`;
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -90,7 +193,9 @@ export default function SheltersListScreen() {
 
           <Text style={styles.title}>Nearby Shelters</Text>
           <Text style={styles.subtitle}>
-            10 closest official shelters based on your current location
+            {isEmergencyMode
+                ? 'EMERGENCY MODE ON'
+                : 'EMERGENCY MODE OFF'}
           </Text>
         </View>
 
@@ -104,7 +209,7 @@ export default function SheltersListScreen() {
           ) : (
             nearbyShelters.map((shelter) => (
               <Pressable
-                key={shelter.id}
+                key={`${shelter.source}-${shelter.id}`}
                 style={styles.shelterCard}
                 onPress={() =>
                   router.push({
@@ -113,6 +218,7 @@ export default function SheltersListScreen() {
                       name: shelter.name,
                       latitude: String(shelter.latitude),
                       longitude: String(shelter.longitude),
+                      source: shelter.source,
                     },
                   })
                 }

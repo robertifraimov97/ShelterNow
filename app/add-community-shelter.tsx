@@ -8,6 +8,7 @@ import {
   Pressable,
   TextInput,
   Switch,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { API_BASE_URL } from '../constants/api';
@@ -23,15 +24,18 @@ export default function AddCommunityShelterScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    if (!shelterName.trim() || !city.trim()) {
-      console.log('Shelter name and city are required');
+    if (!shelterName.trim() || !city.trim() || !address.trim()) {
+      Alert.alert(
+        'Missing information',
+        'Please fill in shelter name, city, and address.'
+      );
       return;
     }
 
     try {
       setLoading(true);
 
-      const response = await fetch(`${API_BASE_URL}/submitted-shelters/`, {
+      const response = await fetch(`${API_BASE_URL}/community-shelters/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -39,29 +43,34 @@ export default function AddCommunityShelterScreen() {
         body: JSON.stringify({
           name: shelterName.trim(),
           city: city.trim(),
-          address: address.trim() || null,
-          latitude: null,
-          longitude: null,
+          address: address.trim(),
           notes: notes.trim() || null,
-          accessibility_notes: isAccessible
-            ? 'Marked as accessible by the submitter'
-            : null,
-          submitted_by_name: null,
-          submitted_by_email: null,
-          submission_status: 'pending',
-          review_notes: null,
+          is_accessible: isAccessible,
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.log('Failed to submit community shelter:', errorData);
+        const errorText = await response.text();
+        console.log('Failed to submit community shelter:', errorText);
+        Alert.alert('Error', 'Failed to submit shelter.');
         return;
       }
+
+      Alert.alert('Success', 'Community shelter submitted successfully.');
+
+      setShelterName('');
+      setCity('');
+      setAddress('');
+      setNotes('');
+      setIsAccessible(false);
 
       router.back();
     } catch (error) {
       console.log('Network error while submitting community shelter:', error);
+      Alert.alert(
+        'Error',
+        'Something went wrong while submitting the shelter.'
+      );
     } finally {
       setLoading(false);
     }
@@ -140,11 +149,20 @@ export default function AddCommunityShelterScreen() {
         <Pressable
           style={[
             styles.submitButton,
-            (loading || !shelterName.trim() || !city.trim()) &&
+            (loading ||
+              !shelterName.trim() ||
+              !city.trim() ||
+              !address.trim()) &&
               styles.submitButtonDisabled,
           ]}
           onPress={handleSubmit}
-          disabled={loading || !shelterName.trim() || !city.trim()}>
+          disabled={
+            loading ||
+            !shelterName.trim() ||
+            !city.trim() ||
+            !address.trim()
+          }
+        >
           <Text style={styles.submitButtonText}>
             {loading ? 'Submitting...' : 'Submit Shelter'}
           </Text>
