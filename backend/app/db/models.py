@@ -2,6 +2,8 @@ from datetime import datetime
 
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime
 
+
+
 from app.db.database import Base
 
 
@@ -20,7 +22,7 @@ class Shelter(Base):
     source_url = Column(String, nullable=True)
     accessibility_notes = Column(String, nullable=True)
     status = Column(String, nullable=False, default="unknown")
-    last_verified_at = Column(String, nullable=True)
+    last_verified_at = Column(DateTime, nullable=True)
 
 
 class SubmittedShelter(Base):
