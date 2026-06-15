@@ -19,8 +19,6 @@ type OfficialShelter = {
   accessibility_notes?: string | null;
   status: string;
   last_verified_at?: string | null;
-  created_at: string;
-  updated_at: string;
 };
 
 type NearbyShelter = {
@@ -33,6 +31,24 @@ type NearbyShelter = {
   distance_meters: number;
   estimated_walk_minutes: number;
   source: string;
+};
+
+type AlertsResponse = {
+  alert: {
+    source: string;
+    raw: Record<string, any>;
+    has_active_alert: boolean;
+  };
+  relevance: {
+    priority: 'emergency' | 'followed_area' | 'none';
+    current_location_match: boolean;
+    show_nearest_shelter_button: boolean;
+  };
+  experience?: {
+    focus_mode: 'normal' | 'current_location_warning' | 'current_location_emergency';
+    show_nearest_shelter_button: boolean;
+    should_offer_shelter_guidance: boolean;
+  };
 };
 
 function formatDistance(distanceMeters: number) {
@@ -51,32 +67,15 @@ export default function MapScreen() {
     longitude: number;
   } | null>(null);
 
+  const [currentCity, setCurrentCity] = useState<string | null>(null);
+  const [isEmergencyMode, setIsEmergencyMode] = useState(false);
+
   const [showCenterButton, setShowCenterButton] = useState(false);
   const [officialShelters, setOfficialShelters] = useState<OfficialShelter[]>([]);
   const [nearbyShelters, setNearbyShelters] = useState<NearbyShelter[]>([]);
   const [loadingShelters, setLoadingShelters] = useState(true);
 
   const mapRef = useRef<MapView | null>(null);
-
-  useEffect(() => {
-    const getUserLocation = async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-
-      if (status !== 'granted') {
-        console.log('Location permission was denied');
-        return;
-      }
-
-      const location = await Location.getCurrentPositionAsync({});
-
-      setUserLocation({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-    };
-
-    getUserLocation();
-  }, []);
 
   const loadOfficialShelters = async () => {
     try {
@@ -94,14 +93,54 @@ export default function MapScreen() {
     }
   };
 
+  const resolveEmergencyMode = async (cityName: string | null) => {
+    try {
+      const params = new URLSearchParams();
+
+      if (cityName) {
+        params.append('current_city', cityName);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/alerts/?${params.toString()}`);
+
+      if (!response.ok) {
+        setIsEmergencyMode(false);
+        return false;
+      }
+
+      const data: AlertsResponse = await response.json();
+
+      const shouldUseEmergencyShelterFlow =
+        data.relevance.current_location_match ||
+        data.relevance.show_nearest_shelter_button ||
+        data.experience?.show_nearest_shelter_button ||
+        data.experience?.should_offer_shelter_guidance ||
+        data.experience?.focus_mode === 'current_location_emergency' ||
+        data.experience?.focus_mode === 'current_location_warning';
+
+      const emergency = Boolean(shouldUseEmergencyShelterFlow);
+      setIsEmergencyMode(emergency);
+      return emergency;
+    } catch (error) {
+      console.log('Failed to load alerts state for map screen:', error);
+      setIsEmergencyMode(false);
+      return false;
+    }
+  };
+
   const loadNearbyShelters = async (
     latitude: number,
-    longitude: number
+    longitude: number,
+    useEmergencyMode: boolean
   ) => {
     try {
       setLoadingShelters(true);
 
-      const response = await fetch(`${API_BASE_URL}/recommendations/nearby-shelters`, {
+      const endpoint = useEmergencyMode
+        ? `${API_BASE_URL}/recommendations/nearby-emergency-shelters`
+        : `${API_BASE_URL}/recommendations/nearby-shelters`;
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -109,6 +148,7 @@ export default function MapScreen() {
         body: JSON.stringify({
           user_latitude: latitude,
           user_longitude: longitude,
+          limit: 5,
         }),
       });
 
@@ -118,7 +158,7 @@ export default function MapScreen() {
         return;
       }
 
-      const data = await response.json();
+      const data: NearbyShelter[] = await response.json();
       setNearbyShelters(data);
     } catch (error) {
       console.log('Failed to load nearby shelters recommendation:', error);
@@ -128,17 +168,64 @@ export default function MapScreen() {
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      loadOfficialShelters();
-    }, [])
-  );
+  const loadExploreScreenData = async () => {
+    try {
+      setLoadingShelters(true);
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== 'granted') {
+        console.log('Location permission was denied');
+        setLoadingShelters(false);
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+
+      const coords = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      };
+
+      setUserLocation(coords);
+
+      let cityName: string | null = null;
+
+      try {
+        const reverseGeocoded = await Location.reverseGeocodeAsync(coords);
+
+        if (reverseGeocoded.length > 0) {
+          const place = reverseGeocoded[0];
+          cityName = place.city || place.subregion || place.region || null;
+        }
+      } catch (error) {
+        console.log('Failed to reverse geocode current city for map screen:', error);
+      }
+
+      setCurrentCity(cityName);
+
+      const emergencyMode = await resolveEmergencyMode(cityName);
+
+      await Promise.all([
+        loadOfficialShelters(),
+        loadNearbyShelters(coords.latitude, coords.longitude, emergencyMode),
+      ]);
+    } catch (error) {
+      console.log('Failed to load explore screen data:', error);
+      setNearbyShelters([]);
+      setLoadingShelters(false);
+    }
+  };
 
   useEffect(() => {
-    if (!userLocation) return;
+    loadExploreScreenData();
+  }, []);
 
-    loadNearbyShelters(userLocation.latitude, userLocation.longitude);
-  }, [userLocation]);
+  useFocusEffect(
+    useCallback(() => {
+      loadExploreScreenData();
+    }, [])
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -146,7 +233,9 @@ export default function MapScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>Nearby Protected Areas</Text>
           <Text style={styles.subtitle}>
-            View protected areas around your current location
+            {isEmergencyMode
+              ? 'Emergency mode active near your location'
+              : 'View protected areas around your current location'}
           </Text>
         </View>
 
@@ -179,7 +268,8 @@ export default function MapScreen() {
                       latitudeDifference > 0.002 || longitudeDifference > 0.002;
 
                     setShowCenterButton(movedAway);
-                  }}>
+                  }}
+                >
                   <Marker
                     coordinate={{
                       latitude: userLocation.latitude,
@@ -187,6 +277,7 @@ export default function MapScreen() {
                     }}
                     title="Your Location"
                     description="Current user position"
+                    pinColor="red"
                   />
 
                   {officialShelters.map((shelter) => (
@@ -219,14 +310,16 @@ export default function MapScreen() {
                         );
                         setShowCenterButton(false);
                       }
-                    }}>
+                    }}
+                  >
                     <Text style={styles.centerButtonText}>Center on Me</Text>
                   </Pressable>
                 )}
 
                 <Pressable
                   style={styles.fullMapButton}
-                  onPress={() => router.push('/full-map')}>
+                  onPress={() => router.push('/full-map')}
+                >
                   <Text style={styles.fullMapButtonText}>Open Full Map</Text>
                 </Pressable>
               </>
@@ -253,12 +346,26 @@ export default function MapScreen() {
           ) : (
             nearbyShelters.map((shelter) => (
               <Pressable
-                key={shelter.id}
+                key={`${shelter.source}-${shelter.id}`}
                 style={styles.areaCard}
-                onPress={() => router.push('/shelter-details')}>
+                onPress={() =>
+                  router.push({
+                    pathname: '/navigation',
+                    params: {
+                      name: shelter.name,
+                      latitude: String(shelter.latitude),
+                      longitude: String(shelter.longitude),
+                      source: shelter.source,
+                    },
+                  })
+                }
+              >
                 <Text style={styles.areaName}>{shelter.name}</Text>
                 <Text style={styles.areaInfo}>
-                  {formatDistance(shelter.distance_meters)}
+                  {shelter.address || shelter.city}
+                </Text>
+                <Text style={styles.areaInfo}>
+                  {formatDistance(shelter.distance_meters)} • {shelter.estimated_walk_minutes} min walk
                 </Text>
                 <Text style={styles.areaInfo}>Source: {shelter.source}</Text>
               </Pressable>

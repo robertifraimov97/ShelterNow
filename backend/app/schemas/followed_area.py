@@ -4,7 +4,6 @@ from typing import Optional
 
 
 class FollowedAreaBase(BaseModel):
-    user_identifier: str
     area_name: str
     city_code: Optional[str] = None
     label: Optional[str] = None

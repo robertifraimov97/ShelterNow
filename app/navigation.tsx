@@ -68,6 +68,14 @@ export default function NavigationScreen() {
   const shelterName = String(params.name || '');
   const shelterLatitude = Number(params.latitude);
   const shelterLongitude = Number(params.longitude);
+  const shelterSource = String(params.source || 'Official');
+
+  const isCommunityShelter = shelterSource === 'Community';
+  const destinationPinColor = isCommunityShelter ? 'purple' : 'blue';
+  const routeColor = isCommunityShelter ? '#7C3AED' : '#2563EB';
+  const destinationTypeLabel = isCommunityShelter
+    ? 'Community shelter'
+    : 'Official shelter';
 
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
@@ -250,7 +258,9 @@ export default function NavigationScreen() {
           )}
 
           <Text style={styles.cardSource}>
-            {isLoadingRoute ? 'Updating route...' : 'Live navigation preview'}
+            {isLoadingRoute
+              ? 'Updating route...'
+              : `${destinationTypeLabel} • Live navigation preview`}
           </Text>
         </View>
 
@@ -287,15 +297,15 @@ export default function NavigationScreen() {
                       longitude: shelterLongitude,
                     }}
                     title={shelterName}
-                    description="Destination shelter"
-                    pinColor="blue"
+                    description={destinationTypeLabel}
+                    pinColor={destinationPinColor}
                   />
 
                   {walkingRoute.length > 0 && (
                     <Polyline
                       coordinates={walkingRoute}
                       strokeWidth={5}
-                      strokeColor="#2563EB"
+                      strokeColor={routeColor}
                     />
                   )}
                 </MapView>
@@ -346,7 +356,7 @@ export default function NavigationScreen() {
                       left: 14,
                       right: 14,
                       bottom: 14,
-                        backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.85)',
                       borderRadius: 18,
                       padding: 14,
                       borderWidth: 1,
@@ -392,6 +402,17 @@ export default function NavigationScreen() {
                     >
                       {formatDistance(currentInstruction.distance_meters)} •{' '}
                       {formatDuration(currentInstruction.duration_seconds)}
+                    </Text>
+
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        color: isCommunityShelter ? '#7C3AED' : '#2563EB',
+                        fontWeight: '700',
+                        marginTop: 8,
+                      }}
+                    >
+                      {destinationTypeLabel}
                     </Text>
                   </View>
                 )}

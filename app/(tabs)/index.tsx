@@ -20,8 +20,8 @@ type OfficialShelter = {
   accessibility_notes?: string | null;
   status: string;
   last_verified_at?: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type BestShelterRecommendation = {
@@ -47,6 +47,24 @@ type WalkingRouteResponse = {
   route_coordinates: RoutePoint[];
 };
 
+type AlertsResponse = {
+  alert: {
+    source: string;
+    raw: Record<string, any>;
+    has_active_alert: boolean;
+  };
+  relevance: {
+    priority: 'emergency' | 'followed_area' | 'none';
+    current_location_match: boolean;
+    show_nearest_shelter_button: boolean;
+  };
+  experience?: {
+    focus_mode: 'normal' | 'current_location_warning' | 'current_location_emergency';
+    show_nearest_shelter_button: boolean;
+    should_offer_shelter_guidance: boolean;
+  };
+};
+
 function formatDistance(distanceMeters: number) {
   if (distanceMeters < 1000) {
     return `${distanceMeters}m`;
@@ -63,6 +81,9 @@ export default function HomeScreen() {
     longitude: number;
   } | null>(null);
 
+  const [currentCity, setCurrentCity] = useState<string | null>(null);
+  const [isEmergencyMode, setIsEmergencyMode] = useState(false);
+
   const [showCenterButton, setShowCenterButton] = useState(false);
   const [officialShelters, setOfficialShelters] = useState<OfficialShelter[]>([]);
   const [bestShelter, setBestShelter] = useState<BestShelterRecommendation | null>(null);
@@ -70,26 +91,6 @@ export default function HomeScreen() {
   const [loadingBestShelter, setLoadingBestShelter] = useState(true);
 
   const mapRef = useRef<MapView | null>(null);
-
-  useEffect(() => {
-    const getUserLocation = async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-
-      if (status !== 'granted') {
-        console.log('Location permission was denied');
-        return;
-      }
-
-      const location = await Location.getCurrentPositionAsync({});
-
-      setUserLocation({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-    };
-
-    getUserLocation();
-  }, []);
 
   const loadOfficialShelters = async () => {
     try {
@@ -107,14 +108,54 @@ export default function HomeScreen() {
     }
   };
 
+  const resolveEmergencyMode = async (cityName: string | null) => {
+    try {
+      const params = new URLSearchParams();
+
+      if (cityName) {
+        params.append('current_city', cityName);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/alerts/?${params.toString()}`);
+
+      if (!response.ok) {
+        setIsEmergencyMode(false);
+        return false;
+      }
+
+      const data: AlertsResponse = await response.json();
+
+      const shouldUseEmergencyShelterFlow =
+        data.relevance.current_location_match ||
+        data.relevance.show_nearest_shelter_button ||
+        data.experience?.show_nearest_shelter_button ||
+        data.experience?.should_offer_shelter_guidance ||
+        data.experience?.focus_mode === 'current_location_emergency' ||
+        data.experience?.focus_mode === 'current_location_warning';
+
+      const emergency = Boolean(shouldUseEmergencyShelterFlow);
+      setIsEmergencyMode(emergency);
+      return emergency;
+    } catch (error) {
+      console.log('Failed to load alerts state for home screen:', error);
+      setIsEmergencyMode(false);
+      return false;
+    }
+  };
+
   const loadBestShelterRecommendation = async (
     latitude: number,
-    longitude: number
+    longitude: number,
+    useEmergencyMode: boolean
   ) => {
     try {
       setLoadingBestShelter(true);
 
-      const response = await fetch(`${API_BASE_URL}/recommendations/best-shelter`, {
+      const endpoint = useEmergencyMode
+        ? `${API_BASE_URL}/recommendations/best-emergency-shelter`
+        : `${API_BASE_URL}/recommendations/best-shelter`;
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -175,20 +216,68 @@ export default function HomeScreen() {
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      loadOfficialShelters();
-    }, [])
-  );
+  const loadHomeScreenData = async () => {
+    try {
+      setLoadingBestShelter(true);
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== 'granted') {
+        console.log('Location permission was denied');
+        setLoadingBestShelter(false);
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+
+      const coords = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      };
+
+      setUserLocation(coords);
+
+      let cityName: string | null = null;
+
+      try {
+        const reverseGeocoded = await Location.reverseGeocodeAsync(coords);
+
+        if (reverseGeocoded.length > 0) {
+          const place = reverseGeocoded[0];
+          cityName = place.city || place.subregion || place.region || null;
+        }
+      } catch (error) {
+        console.log('Failed to reverse geocode current city for home screen:', error);
+      }
+
+      setCurrentCity(cityName);
+
+      const emergencyMode = await resolveEmergencyMode(cityName);
+
+      await Promise.all([
+        loadOfficialShelters(),
+        loadBestShelterRecommendation(
+          coords.latitude,
+          coords.longitude,
+          emergencyMode
+        ),
+      ]);
+    } catch (error) {
+      console.log('Failed to load home screen data:', error);
+      setBestShelter(null);
+      setLoadingBestShelter(false);
+    }
+  };
 
   useEffect(() => {
-    if (!userLocation) return;
+    loadHomeScreenData();
+  }, []);
 
-    loadBestShelterRecommendation(
-      userLocation.latitude,
-      userLocation.longitude
-    );
-  }, [userLocation]);
+  useFocusEffect(
+    useCallback(() => {
+      loadHomeScreenData();
+    }, [])
+  );
 
   useEffect(() => {
     if (!userLocation || !bestShelter) {
@@ -214,7 +303,9 @@ export default function HomeScreen() {
 
         <View style={styles.statusCard}>
           <Text style={styles.statusLabel}>Status</Text>
-          <Text style={styles.statusValue}>All Clear</Text>
+          <Text style={styles.statusValue}>
+            {isEmergencyMode ? 'Emergency Mode' : 'All Clear'}
+          </Text>
         </View>
 
         <View style={styles.mainCard}>
@@ -224,7 +315,7 @@ export default function HomeScreen() {
             <>
               <Text style={styles.cardName}>Loading...</Text>
               <Text style={styles.cardMeta}>Checking nearby shelters</Text>
-              <Text style={styles.cardSource}>Official source</Text>
+              <Text style={styles.cardSource}>Loading source</Text>
             </>
           ) : bestShelter ? (
             <>
@@ -232,13 +323,15 @@ export default function HomeScreen() {
               <Text style={styles.cardMeta}>
                 {formatDistance(bestShelter.distance_meters)} • {bestShelter.estimated_walk_minutes} min walk
               </Text>
-              <Text style={styles.cardSource}>{bestShelter.source} source</Text>
+              <Text style={styles.cardSource}>
+                {bestShelter.source} source
+              </Text>
             </>
           ) : (
             <>
               <Text style={styles.cardName}>No shelter found</Text>
-              <Text style={styles.cardMeta}>No official shelters available yet</Text>
-              <Text style={styles.cardSource}>Official source</Text>
+              <Text style={styles.cardMeta}>No nearby shelters available yet</Text>
+              <Text style={styles.cardSource}>No source available</Text>
             </>
           )}
 
@@ -257,6 +350,7 @@ export default function HomeScreen() {
                       name: bestShelter.name,
                       latitude: String(bestShelter.latitude),
                       longitude: String(bestShelter.longitude),
+                      source: bestShelter.source,
                     },
                   });
                 }}
@@ -326,7 +420,9 @@ export default function HomeScreen() {
                     <Polyline
                       coordinates={walkingRoute}
                       strokeWidth={4}
-                      strokeColor="#2563EB"
+                      strokeColor={
+                        bestShelter?.source === 'Community' ? '#7C3AED' : '#2563EB'
+                      }
                     />
                   )}
                 </MapView>
