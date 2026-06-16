@@ -1,15 +1,12 @@
 import json
 import time
 from pathlib import Path
+import sys
 
 from app.db.database import SessionLocal
 from app.db.models import Shelter
 from app.services.geocoding import geocode_address
-import sys
 
-
-# Read the JSON file path from the command line.
-# Allows importing shelter data from any city.
 
 if len(sys.argv) < 2:
     print("Usage:")
@@ -73,21 +70,31 @@ def main():
                 print(f"Skipped existing shelter in DB: {name} | {address} | {city}")
                 continue
 
-            geocoding_address = item.get("geocoding_address") or address
+            latitude = item.get("latitude")
+            longitude = item.get("longitude")
 
-            coordinates = geocode_address(
-                address=geocoding_address,
-                city=city,
-            )
+            if latitude is None or longitude is None:
+                geocoding_address = item.get("geocoding_address")
 
-            time.sleep(1.5)
+                if geocoding_address:
+                    coordinates = geocode_address(
+                        address=geocoding_address,
+                        city=None,
+                    )
+                else:
+                    coordinates = geocode_address(
+                        address=address,
+                        city=city,
+                    )
 
-            latitude = coordinates["latitude"] if coordinates else None
-            longitude = coordinates["longitude"] if coordinates else None
+                time.sleep(1.5)
+
+                latitude = coordinates["latitude"] if coordinates else None
+                longitude = coordinates["longitude"] if coordinates else None
 
             if latitude is None or longitude is None:
                 skipped_count += 1
-                print(f"Skipped because geocoding failed: {name} | {address} | {city}")
+                print(f"Skipped because coordinates are missing: {name} | {address} | {city}")
                 continue
 
             new_shelter = Shelter(
@@ -102,7 +109,6 @@ def main():
                 source_url=item.get("source_url"),
                 accessibility_notes=item.get("accessibility_notes"),
                 status=item.get("status", "unknown"),
-                last_verified_at=item.get("last_verified_at"),
             )
 
             db.add(new_shelter)

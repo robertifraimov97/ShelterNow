@@ -35,11 +35,17 @@ export const styles = StyleSheet.create({
     color: "#64748B",
     marginBottom: 6,
   },
-  statusValue: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#16A34A",
-  },
+    statusValue: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#0F172A',
+    },
+    statusValueEmergency: {
+      color: '#DC2626',
+    },
+    statusValueNormal: {
+      color: '#16A34A',
+    },
   mainCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
