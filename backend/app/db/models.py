@@ -57,3 +57,11 @@ class CommunityShelter(Base):
     is_active = Column(Boolean, default=True)
     show_only_during_emergency = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class PushToken(Base):
+    __tablename__ = "push_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String, nullable=False, unique=True)
+    platform = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

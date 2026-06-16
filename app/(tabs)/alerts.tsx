@@ -3,6 +3,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import * as Location from 'expo-location';
 import { API_BASE_URL } from '../../constants/api';
+import { registerForPushNotificationsAsync } from '../../services/pushNotifications';
 
 type FollowedArea = {
   id: number;
@@ -121,11 +122,20 @@ export default function AlertsScreen() {
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      loadInitialData();
-    }, [])
-  );
+ useFocusEffect(
+  useCallback(() => {
+    loadInitialData();
+
+    registerForPushNotificationsAsync()
+      .then((token) => {
+        console.log('Push token:', token);
+      })
+      .catch((error) => {
+        console.error('Push registration failed:', error);
+      });
+
+  }, [])
+);
 
   const priority = alertsResponse?.relevance.priority || 'none';
   const hasActiveAlert = alertsResponse?.alert.has_active_alert || false;
