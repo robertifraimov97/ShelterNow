@@ -1,6 +1,7 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import { API_BASE_URL } from '../constants/api';
 
 /*
  * Push Notifications Service
@@ -25,7 +26,6 @@ import Constants from 'expo-constants';
  */
 
 export async function registerForPushNotificationsAsync() {
-
     /*
      * Push notifications require a real device.
      *
@@ -55,7 +55,6 @@ export async function registerForPushNotificationsAsync() {
      * ask the user for notification permission.
      */
     if (finalStatus !== 'granted') {
-
         const requestedPermission =
             await Notifications.requestPermissionsAsync();
 
@@ -100,14 +99,79 @@ export async function registerForPushNotificationsAsync() {
     /*
      * Temporary development logging.
      *
-     * Future:
-     * Send token to backend API
-     * and store it in Neon/PostgreSQL.
+     * Helps verify that Expo successfully
+     * generated a Push Token for this device.
      */
     console.log(
         'Expo push token:',
         tokenData.data
     );
 
+    /*
+     * Register this device with the backend.
+     *
+     * Flow:
+     *
+     * Mobile App
+     *   ↓
+     * Expo Push Token
+     *   ↓
+     * POST /push/register
+     *   ↓
+     * FastAPI
+     *   ↓
+     * Neon PostgreSQL
+     *
+     * The backend stores the token so it can
+     * later send emergency notifications
+     * to this device.
+     */
+    const response = await fetch(
+        `${API_BASE_URL}/push/register`,
+        {
+            method: 'POST',
+
+            headers: {
+                'Content-Type': 'application/json',
+            },
+
+            body: JSON.stringify({
+                token: tokenData.data,
+
+                /*
+                 * Device platform.
+                 *
+                 * Examples:
+                 * iOS
+                 * Android
+                 *
+                 * Useful for debugging,
+                 * analytics and future filtering.
+                 */
+                platform: Device.osName ?? 'unknown',
+            }),
+        }
+    );
+
+    /*
+     * Log backend registration result.
+     */
+    if (response.ok) {
+        console.log(
+            'Push token successfully registered.'
+        );
+    } else {
+        console.log(
+            'Failed to register push token.'
+        );
+    }
+
+    /*
+     * Return the token to the caller.
+     *
+     * Future:
+     * The caller may use this token
+     * for additional logic or debugging.
+     */
     return tokenData.data;
 }
