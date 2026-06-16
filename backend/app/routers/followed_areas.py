@@ -15,19 +15,27 @@ def get_followed_areas(db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=FollowedAreaResponse)
+
 def create_followed_area(
+
     followed_area: FollowedAreaCreate,
-    db: Session = Depends(get_db)
+
+    db: Session = Depends(get_db),
+
 ):
+
     new_followed_area = FollowedArea(
-        user_identifier=followed_area.user_identifier,
+
+        user_identifier="default_user",
+
         area_name=followed_area.area_name,
-        city_code=followed_area.city_code,
-        label=followed_area.label,
+
     )
 
     db.add(new_followed_area)
+
     db.commit()
+
     db.refresh(new_followed_area)
 
     return new_followed_area

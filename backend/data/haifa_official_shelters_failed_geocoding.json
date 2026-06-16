@@ -1,0 +1,242 @@
+[
+  {
+    "name": "Haifa Official Shelter 6",
+    "address": "Mishmar ha-Emek 10",
+    "city": "חיפה",
+    "geocoding_address": "Mishmar ha-Emek 10, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 7",
+    "address": "Bentsiyon Yisra'eli 41",
+    "city": "חיפה",
+    "geocoding_address": "Bentsiyon Yisra'eli 41, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 8",
+    "address": "Mishmar ha-Emek 19",
+    "city": "חיפה",
+    "geocoding_address": "Mishmar ha-Emek 19, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 10",
+    "address": "Sderot Deganya 10",
+    "city": "חיפה",
+    "geocoding_address": "Sderot Deganya 10, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 11",
+    "address": "Sderot Deganya 33",
+    "city": "חיפה",
+    "geocoding_address": "Sderot Deganya 33, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 12",
+    "address": "Sderot Deganya 53 Alef",
+    "city": "חיפה",
+    "geocoding_address": "Sderot Deganya 53, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 13",
+    "address": "Sderot Deganya 53 Bet",
+    "city": "חיפה",
+    "geocoding_address": "Sderot Deganya 53, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 15",
+    "address": "Ba'al ha-Tanya 4",
+    "city": "חיפה",
+    "geocoding_address": "Ba'al ha-Tanya 4, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 19",
+    "address": "Ha-Plugot St 54",
+    "city": "חיפה",
+    "geocoding_address": "Ha-Plugot 54, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 23",
+    "address": "Homa Umigdal 18 Alef",
+    "city": "חיפה",
+    "geocoding_address": "Homa Umigdal 18, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 24",
+    "address": "Ha-Kongres 43 Alef",
+    "city": "חיפה",
+    "geocoding_address": "Ha-Kongres 43, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 25",
+    "address": "Yitskhak Yatsiv 46",
+    "city": "חיפה",
+    "geocoding_address": "Yitskhak Yatsiv 46, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 26",
+    "address": "Yitskhak Yatsiv 24",
+    "city": "חיפה",
+    "geocoding_address": "Yitskhak Yatsiv 24, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 28",
+    "address": "Brakha Fuld 13",
+    "city": "חיפה",
+    "geocoding_address": "Brakha Fuld 13, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 29",
+    "address": "Tsizling 26",
+    "city": "חיפה",
+    "geocoding_address": "Tsizling 26, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 31",
+    "address": "Ha-Sar Shitrit St 26",
+    "city": "חיפה",
+    "geocoding_address": "Ha-Sar Shitrit 26, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 33",
+    "address": "Berl Katznelson 3",
+    "city": "חיפה",
+    "geocoding_address": "Berl Katznelson 3, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 34",
+    "address": "Berl Katznelson 29",
+    "city": "חיפה",
+    "geocoding_address": "Berl Katznelson 29, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 40",
+    "address": "Khaviva Reik 33",
+    "city": "חיפה",
+    "geocoding_address": "Khaviva Reik 33, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 46",
+    "address": "Razi'el 44",
+    "city": "חיפה",
+    "geocoding_address": "Razi'el 44, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 56",
+    "address": "Tel Khai St 10, corner Yosef 18",
+    "city": "חיפה",
+    "geocoding_address": "Tel Khai 10, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 60",
+    "address": "Madrigot (stairs) Beit She'arim 5",
+    "city": "חיפה",
+    "geocoding_address": "Beit She'arim 5, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 62",
+    "address": "Emek ha-Zeitim 9",
+    "city": "חיפה",
+    "geocoding_address": "Emek ha-Zeitim 9, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 64",
+    "address": "Kasal 18",
+    "city": "חיפה",
+    "geocoding_address": "Kasal 18, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 65",
+    "address": "Kiesarya 4",
+    "city": "חיפה",
+    "geocoding_address": "Kiesarya 4, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 67",
+    "address": "HaZionut Blvd 53",
+    "city": "חיפה",
+    "geocoding_address": "HaZionut Blvd 53, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 69",
+    "address": "Ha-Tsalafim 5",
+    "city": "חיפה",
+    "geocoding_address": "Ha-Tsalafim 5, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 70",
+    "address": "Moriah Ave 16",
+    "city": "חיפה",
+    "geocoding_address": "Moriah Ave 16, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 72",
+    "address": "Derech Allenby 8",
+    "city": "חיפה",
+    "geocoding_address": "Derech Allenby 8, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 73",
+    "address": "Derech Allenby 72",
+    "city": "חיפה",
+    "geocoding_address": "Derech Allenby 72, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 74",
+    "address": "El-Atiqa 18",
+    "city": "חיפה",
+    "geocoding_address": "El-Atiqa 18, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 75",
+    "address": "Gottlieb Schumacher 2 Alef",
+    "city": "חיפה",
+    "geocoding_address": "Gottlieb Schumacher 2, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 78",
+    "address": "Tzorfat Rd 85",
+    "city": "חיפה",
+    "geocoding_address": "Tzorfat Rd 85, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 84",
+    "address": "Ha-Kala'im 10",
+    "city": "חיפה",
+    "geocoding_address": "Ha-Kala'im 10, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 86",
+    "address": "Ha-Zayit 22 Alef",
+    "city": "חיפה",
+    "geocoding_address": "Ha-Zayit 22, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 91",
+    "address": "Tchernikhovski 34",
+    "city": "חיפה",
+    "geocoding_address": "Tchernikhovski 34, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 94",
+    "address": "Me'ir Rutberg 44",
+    "city": "חיפה",
+    "geocoding_address": "Me'ir Rutberg 44, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 95",
+    "address": "Amal 31 Alef",
+    "city": "חיפה",
+    "geocoding_address": "Amal 31, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 98",
+    "address": "Tsiklag 17",
+    "city": "חיפה",
+    "geocoding_address": "Tsiklag 17, Haifa, Israel"
+  },
+  {
+    "name": "Haifa Official Shelter 100",
+    "address": "Sderot Warburg 7",
+    "city": "חיפה",
+    "geocoding_address": "Sderot Warburg 7, Haifa, Israel"
+  }
+]
