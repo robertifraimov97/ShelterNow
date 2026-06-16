@@ -301,12 +301,17 @@ export default function HomeScreen() {
           <Text style={styles.subtitle}>Emergency shelter guidance</Text>
         </View>
 
-        <View style={styles.statusCard}>
-          <Text style={styles.statusLabel}>Status</Text>
-          <Text style={styles.statusValue}>
-            {isEmergencyMode ? 'Emergency Mode' : 'All Clear'}
-          </Text>
-        </View>
+          <View style={styles.statusCard}>
+            <Text style={styles.statusLabel}>Status</Text>
+            <Text
+              style={[
+                styles.statusValue,
+                { color: isEmergencyMode ? '#DC2626' : '#16A34A' },
+              ]}
+            >
+              {isEmergencyMode ? 'Emergency Mode' : 'All Clear'}
+            </Text>
+          </View>
 
         <View style={styles.mainCard}>
           <Text style={styles.cardTitle}>Nearest Shelter</Text>
