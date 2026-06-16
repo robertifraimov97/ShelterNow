@@ -38,10 +38,15 @@ class SubmittedShelter(Base):
 
 
 class FollowedArea(Base):
+
     __tablename__ = "followed_areas"
 
     id = Column(Integer, primary_key=True, index=True)
-    area_name = Column(String, nullable=False, unique=True)
+
+    user_identifier = Column(String, nullable=False)
+
+    area_name = Column(String, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
