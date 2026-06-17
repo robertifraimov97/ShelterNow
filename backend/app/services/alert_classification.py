@@ -191,7 +191,7 @@ def classify_alert(raw_alert: dict | None) -> dict:
     }
 
 
-def build_alert_experience(relevance: dict, classification: dict) -> dict:
+# def build_alert_experience(relevance: dict, classification: dict) -> dict:
     """
     Decide what ShelterNow should do with the alert.
 

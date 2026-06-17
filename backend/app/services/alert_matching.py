@@ -1,6 +1,6 @@
 # Some Home Front Command alert areas are not simple city names.
 # Until we have official alert-zone polygons, we use city-level matching
-# with a small alias table for known naming exceptions.
+# with a controlled normalization layer.
 #
 # Professional note:
 # GPS reverse geocoding may return names in different languages or formats,
@@ -12,7 +12,7 @@
 #
 # Home Front Command may use alert-zone names such as:
 # - "תל אביב - מרכז העיר"
-# - "תל אביב - עבר הירקון"
+# - "אשדוד - א,ב,ד,ה"
 #
 # Therefore matching must compare normalized/canonical names,
 # not raw strings.
@@ -34,6 +34,34 @@ CITY_ALIASES = {
     "Ashdod": "אשדוד",
     "Ramat Gan": "רמת גן",
     "Ramat Hasharon": "רמת השרון",
+}
+
+# Only these prefixes are treated as city-level parent areas.
+#
+# Important:
+# Not every Home Front Command area containing " - " is a sub-area.
+#
+# Examples that should NOT be blindly split:
+# - "כוכב יאיר - צור יגאל"
+# - "בית יצחק - שער חפר"
+# - "ג'ש - גוש חלב"
+#
+# Therefore we only collapse known city sub-area groups.
+CITY_SUB_AREA_PREFIXES = {
+    "אשדוד",
+    "אשקלון",
+    "באר שבע",
+    "הרצליה",
+    "חדרה",
+    "חיפה",
+    "ירושלים",
+    "מודיעין",
+    "נתניה",
+    "עכו",
+    "ראשון לציון",
+    "רמת גן",
+    "תל אביב",
+    "צפת",
 }
 
 ALERT_AREA_ALIASES = {
@@ -61,11 +89,20 @@ def normalize_area_name(area_name: str | None) -> str:
     # Convert known GPS / English / naming variants to canonical Hebrew names.
     normalized = CITY_ALIASES.get(normalized, normalized)
 
-    # Home Front Command Tel Aviv sub-areas:
+    # Controlled city sub-area normalization.
+    #
+    # Examples:
+    # "אשדוד - א,ב,ד,ה" -> "אשדוד"
     # "תל אביב - מרכז העיר" -> "תל אביב"
-    # "תל אביב - עבר הירקון" -> "תל אביב"
-    if normalized.startswith("תל אביב -"):
-        return "תל אביב"
+    # "ירושלים - מערב" -> "ירושלים"
+    #
+    # We only do this for known city sub-area prefixes
+    # to avoid damaging compound settlement names.
+    if " - " in normalized:
+        parent_area = normalized.split(" - ", 1)[0]
+
+        if parent_area in CITY_SUB_AREA_PREFIXES:
+            return parent_area
 
     return normalized
 
@@ -83,12 +120,15 @@ def area_matches_city(affected_area: str, city: str) -> bool:
     # Exact canonical match:
     # "Tel Aviv-Yafo" -> "תל אביב"
     # "תל אביב - מרכז העיר" -> "תל אביב"
+    # "אשדוד - א,ב,ד,ה" -> "אשדוד"
     if affected_area == city:
         return True
 
     # Generic split city alert zone:
     # current city: "תל אביב"
     # affected area: "תל אביב - עבר הירקון"
+    #
+    # This remains as an additional fallback.
     if raw_affected_area.startswith(f"{city} -"):
         return True
 
@@ -106,16 +146,6 @@ def classify_alert_relevance(
     affected_areas = affected_areas or []
     followed_areas = followed_areas or []
 
-    normalized_affected_areas = [
-        normalize_area_name(area)
-        for area in affected_areas
-    ]
-
-    normalized_followed_areas = {
-        normalize_area_name(area): area
-        for area in followed_areas
-    }
-
     # Current-location matching is currently city-level.
     # Future upgrade: replace/extend this with polygon-level matching:
     # GPS point -> Home Front Command alert zone polygon -> affected area.
@@ -128,12 +158,27 @@ def classify_alert_relevance(
         else False
     )
 
-    # Followed areas are matched using normalized names,
-    # but we return the original followed-area names for display in the frontend.
+    # Followed areas use the same matching logic as current location.
+    #
+    # This is important because users may follow specific Home Front Command
+    # sub-areas, while alerts may sometimes arrive at city level.
+    #
+    # Example:
+    # affected area: "אשדוד"
+    # followed area: "אשדוד - א,ב,ד,ה"
+    #
+    # We return the original followed-area names so the frontend can display
+    # exactly what the user follows.
     matched_followed_areas = [
-        original_followed_area
-        for normalized_followed_area, original_followed_area in normalized_followed_areas.items()
-        if normalized_followed_area in normalized_affected_areas
+        followed_area
+        for followed_area in followed_areas
+        if any(
+            area_matches_city(
+                affected_area=affected_area,
+                city=followed_area,
+            )
+            for affected_area in affected_areas
+        )
     ]
 
     if current_location_match:

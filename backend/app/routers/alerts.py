@@ -2,10 +2,8 @@ from fastapi import APIRouter, Query, HTTPException
 
 from app.services.alerts import get_current_alerts
 from app.services.alert_matching import classify_alert_relevance
-from app.services.alert_classification import (
-    classify_alert,
-    build_alert_experience,
-)
+from app.services.alert_classification import classify_alert
+from app.services.alert_experience import build_alert_experience
 from app.services.test_alerts import (
     set_test_alert,
     clear_test_alert,
