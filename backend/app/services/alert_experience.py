@@ -1,9 +1,15 @@
+EMERGENCY_ACCESS_DURATION_SECONDS = 15 * 60
+
+
 def build_alert_experience(relevance: dict, classification: dict) -> dict:
     """
     Decide what ShelterNow should do with the alert.
 
     Professional note:
     This is product behavior, not classification.
+
+    Backend decides the emergency-access policy.
+    Frontend/device may persist the resulting expiration time locally.
 
     relevance:
     - current_location_match
@@ -44,10 +50,12 @@ def build_alert_experience(relevance: dict, classification: dict) -> dict:
         or action == "close_emergency_mode"
     )
 
+    should_activate_emergency_access = (
+        should_offer_shelter_for_current_location
+        and not event_ended
+    )
+
     return {
-        # Main app mode.
-        # Critical current-location alerts should reduce cognitive load
-        # and focus the user on shelter guidance.
         "focus_mode": (
             "current_location_emergency"
             if current_location_critical
@@ -56,37 +64,50 @@ def build_alert_experience(relevance: dict, classification: dict) -> dict:
             else "normal"
         ),
 
-        # Main shelter guidance behavior.
-        # This includes both:
-        # - cat 1 / cat 6 critical events
-        # - cat 10 prepare-near-shelter warning events
         "show_nearest_shelter_button": should_offer_shelter_for_current_location,
         "should_offer_shelter_guidance": should_offer_shelter_for_current_location,
 
-        # Community/private shelters are sensitive.
-        # The app should not expose all of them globally all the time.
-        # During relevant emergency/warning mode, it may expose selected nearby
-        # alternatives chosen behind the scenes.
-        "allow_temporary_community_shelter_access": (
-            should_offer_shelter_for_current_location
-            and not event_ended
+        "allow_temporary_community_shelter_access": should_activate_emergency_access,
+
+        # Emergency access lifecycle policy.
+        #
+        # This does not mean "the security event is over".
+        # It only tells the app how long to keep enhanced emergency access active
+        # after the latest relevant current-location alert.
+        #
+        # Every new relevant alert should extend the local/device timer.
+        "should_activate_emergency_access": should_activate_emergency_access,
+        "emergency_access_duration_seconds": (
+            EMERGENCY_ACCESS_DURATION_SECONDS
+            if should_activate_emergency_access
+            else 0
+        ),
+        "emergency_access_reason": (
+            "current_location_critical_alert"
+            if current_location_critical
+            else "current_location_warning_alert"
+            if current_location_warning
+            else "none"
         ),
 
         # Event-ended behavior.
-        # Used to close emergency mode and hide temporary community shelter access.
-        "close_emergency_mode": event_ended,
-        "hide_community_shelter_access": event_ended,
+        #
+        # For V1, event-ended should be treated carefully.
+        # Because we currently match current location at city level, an event-ended
+        # alert for one sub-area should not automatically close emergency access
+        # for the entire city.
+        #
+        # The frontend should not force-close emergency access based only on this
+        # city-level signal. Timeout is the safer V1 fallback.
+        "close_emergency_mode": False,
+        "hide_community_shelter_access": False,
+        "event_ended_info_only": event_ended,
 
-        # Followed area UX.
-        # Followed area alerts are important, but should not compete with
-        # an emergency affecting the user's current location.
         "show_followed_area_banner": (
             bool(matched_followed_areas)
             and not current_location_critical
         ),
 
-        # Future push notification metadata.
-        # This does NOT send push notifications yet.
         "should_send_push_notification": (
             current_location_match
             or bool(matched_followed_areas)
