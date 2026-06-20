@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.db.models import PushToken
 
 
+# Expo push notifications API endpoint used to send notifications to registered devices.
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 
@@ -28,14 +29,17 @@ def send_push_to_all_registered_devices(
       ↓
     Expo delivers notifications to iOS/Android devices
     """
+    # Load all saved push tokens from the database.
     tokens = db.query(PushToken).all()
 
+    # If no devices are registered, return early with a descriptive result.
     if not tokens:
         return {
             "status": "no_tokens",
             "message": "No push tokens registered.",
         }
 
+    # Build the message payload list expected by the Expo Push API.
     messages = [
         {
             "to": token.token,
@@ -47,12 +51,14 @@ def send_push_to_all_registered_devices(
         for token in tokens
     ]
 
+    # Send the push notification request to Expo.
     response = requests.post(
         EXPO_PUSH_URL,
         json=messages,
         timeout=10,
     )
 
+    # Return a summary of the sending result including the Expo API response.
     return {
         "status": "sent",
         "tokens_count": len(tokens),

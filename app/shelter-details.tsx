@@ -2,11 +2,13 @@ import { SafeAreaView, View, Text, StyleSheet, Pressable, ScrollView } from 'rea
 import { useRouter } from 'expo-router';
 
 export default function ShelterDetailsScreen() {
+  // Router instance used to navigate back to the previous screen.
   const router = useRouter();
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Header section with back button and screen description */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -18,11 +20,13 @@ export default function ShelterDetailsScreen() {
           </Text>
         </View>
 
+        {/* Main summary card for the selected shelter */}
         <View style={styles.mainCard}>
           <Text style={styles.shelterName}>City Mall Shelter</Text>
           <Text style={styles.shelterMeta}>400m away • Official source</Text>
         </View>
 
+        {/* Information cards with shelter details */}
         <View style={styles.infoSection}>
           <View style={styles.infoCard}>
             <Text style={styles.infoLabel}>Accessibility</Text>
@@ -42,16 +46,17 @@ export default function ShelterDetailsScreen() {
           </View>
         </View>
 
-          <View style={styles.goButtonWrapper}>
-            <View style={styles.emergencyButtonHalo}>
-              <Pressable
-                style={styles.emergencyButton}
-                onPress={() => console.log('Start route pressed')}>
-                <Text style={styles.emergencyButtonText}>Start</Text>
-                <Text style={styles.emergencyButtonText}>Route</Text>
-              </Pressable>
-            </View>
+        {/* Main action button for starting navigation to the shelter */}
+        <View style={styles.goButtonWrapper}>
+          <View style={styles.emergencyButtonHalo}>
+            <Pressable
+              style={styles.emergencyButton}
+              onPress={() => console.log('Start route pressed')}>
+              <Text style={styles.emergencyButtonText}>Start</Text>
+              <Text style={styles.emergencyButtonText}>Route</Text>
+            </Pressable>
           </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

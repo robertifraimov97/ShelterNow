@@ -12,13 +12,17 @@ import {
 import { useRouter } from 'expo-router';
 
 export default function EditSubmittedShelterScreen() {
+  // Router instance used for navigating back to the previous screen.
   const router = useRouter();
 
+  // Local state for the editable shelter form fields.
   const [shelterName, setShelterName] = useState('Neighborhood Basement Shelter');
   const [address, setAddress] = useState('12 Herzl St, Tel Aviv');
   const [notes, setNotes] = useState('Accessible entrance from the side gate.');
   const [isAccessible, setIsAccessible] = useState(true);
 
+  // Handles saving the edited shelter values.
+  // At the moment this only logs the updated data.
   const handleSave = () => {
     console.log('Shelter updated', {
       shelterName,
@@ -31,6 +35,7 @@ export default function EditSubmittedShelterScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Header section with back navigation and screen description */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -42,6 +47,7 @@ export default function EditSubmittedShelterScreen() {
           </Text>
         </View>
 
+        {/* Form section for editing the shelter details */}
         <View style={styles.formSection}>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Shelter Name</Text>
@@ -76,6 +82,7 @@ export default function EditSubmittedShelterScreen() {
             />
           </View>
 
+          {/* Accessibility toggle for the shelter */}
           <View style={styles.switchCard}>
             <View style={styles.switchTextContainer}>
               <Text style={styles.switchTitle}>Accessible shelter</Text>
@@ -88,6 +95,7 @@ export default function EditSubmittedShelterScreen() {
           </View>
         </View>
 
+        {/* Save button for submitting the edited shelter data */}
         <Pressable style={styles.saveButton} onPress={handleSave}>
           <Text style={styles.saveButtonText}>Save Changes</Text>
         </Pressable>

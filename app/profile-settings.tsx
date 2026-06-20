@@ -11,14 +11,19 @@ import {
 import { useRouter } from 'expo-router';
 
 export default function ProfileSettingsScreen() {
+  // Router instance used to navigate back to the previous screen.
   const router = useRouter();
 
+  // State for the user's selected mobility preference.
   const [mobility, setMobility] = useState<'regular' | 'limited'>('regular');
+
+  // State for whether accessible routes should be preferred.
   const [accessibleRoute, setAccessibleRoute] = useState(false);
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Header section with back button and screen description */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -30,6 +35,7 @@ export default function ProfileSettingsScreen() {
           </Text>
         </View>
 
+        {/* Section for selecting the user's physical condition / mobility level */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Physical Condition</Text>
 
@@ -66,6 +72,7 @@ export default function ProfileSettingsScreen() {
           </View>
         </View>
 
+        {/* Section for accessibility-related preference settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Accessibility</Text>
 

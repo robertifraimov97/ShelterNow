@@ -2,11 +2,13 @@ import { SafeAreaView, View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 
 export default function ShelterManagementScreen() {
+  // Router instance used to navigate back or to other management screens.
   const router = useRouter();
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
+        {/* Header section with back button and screen description */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -18,6 +20,7 @@ export default function ShelterManagementScreen() {
           </Text>
         </View>
 
+        {/* Menu section with navigation options for shelter-related actions */}
         <View style={styles.menuSection}>
           <Pressable
             style={styles.menuItem}

@@ -14,16 +14,22 @@ import { useRouter } from 'expo-router';
 import { API_BASE_URL } from '../constants/api';
 
 export default function AddCommunityShelterScreen() {
+  // Router instance used for returning to the previous screen after submission.
   const router = useRouter();
 
+  // Form state for the shelter fields.
   const [shelterName, setShelterName] = useState('');
   const [city, setCity] = useState('');
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [isAccessible, setIsAccessible] = useState(false);
+
+  // Loading state used while the shelter is being submitted.
   const [loading, setLoading] = useState(false);
 
+  // Handles form validation and shelter submission to the backend.
   const handleSubmit = async () => {
+    // Prevent submission if required fields are empty.
     if (!shelterName.trim() || !city.trim() || !address.trim()) {
       Alert.alert(
         'Missing information',
@@ -35,6 +41,7 @@ export default function AddCommunityShelterScreen() {
     try {
       setLoading(true);
 
+      // Send the new community shelter to the backend API.
       const response = await fetch(`${API_BASE_URL}/community-shelters/`, {
         method: 'POST',
         headers: {
@@ -49,6 +56,7 @@ export default function AddCommunityShelterScreen() {
         }),
       });
 
+      // If the backend rejects the request, show an error message.
       if (!response.ok) {
         const errorText = await response.text();
         console.log('Failed to submit community shelter:', errorText);
@@ -56,22 +64,27 @@ export default function AddCommunityShelterScreen() {
         return;
       }
 
+      // Show success feedback after successful submission.
       Alert.alert('Success', 'Community shelter submitted successfully.');
 
+      // Reset the form fields after submission.
       setShelterName('');
       setCity('');
       setAddress('');
       setNotes('');
       setIsAccessible(false);
 
+      // Navigate back to the previous screen.
       router.back();
     } catch (error) {
+      // Handle network or unexpected submission errors.
       console.log('Network error while submitting community shelter:', error);
       Alert.alert(
         'Error',
         'Something went wrong while submitting the shelter.'
       );
     } finally {
+      // Always stop the loading state when the request finishes.
       setLoading(false);
     }
   };
@@ -79,6 +92,7 @@ export default function AddCommunityShelterScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Screen header with navigation back button */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -90,6 +104,7 @@ export default function AddCommunityShelterScreen() {
           </Text>
         </View>
 
+        {/* Form section for shelter input fields */}
         <View style={styles.formSection}>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Shelter Name</Text>
@@ -134,6 +149,7 @@ export default function AddCommunityShelterScreen() {
             />
           </View>
 
+          {/* Accessibility toggle for the submitted shelter */}
           <View style={styles.switchCard}>
             <View style={styles.switchTextContainer}>
               <Text style={styles.switchTitle}>Accessible shelter</Text>
@@ -146,6 +162,7 @@ export default function AddCommunityShelterScreen() {
           </View>
         </View>
 
+        {/* Submit button, disabled when required fields are missing or submission is in progress */}
         <Pressable
           style={[
             styles.submitButton,

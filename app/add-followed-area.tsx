@@ -13,15 +13,23 @@ import { israeliCities } from '../data/israeli-cities';
 import { API_BASE_URL } from '../constants/api';
 
 export default function AddFollowedAreaScreen() {
+  // Router instance used to navigate back after adding an area.
   const router = useRouter();
 
+  // Search text entered by the user.
   const [searchText, setSearchText] = useState('');
+
+  // Currently selected city from the list.
   const [selectedCity, setSelectedCity] = useState<{
     name: string;
     cityCode: string;
   } | null>(null);
+
+  // Loading state while the selected area is being added.
   const [loading, setLoading] = useState(false);
 
+  // Filter the city list based on the search text.
+  // If the search is empty, show only the first few cities as suggestions.
   const filteredCities = useMemo(() => {
     if (!searchText.trim()) {
       return israeliCities.slice(0, 8);
@@ -32,6 +40,7 @@ export default function AddFollowedAreaScreen() {
     );
   }, [searchText]);
 
+  // Send the selected city to the backend as a new followed area.
   const handleAddArea = async () => {
     if (!selectedCity) {
       console.log('No city selected');
@@ -54,16 +63,20 @@ export default function AddFollowedAreaScreen() {
         }),
       });
 
+      // If the backend returns an error, log it and stop.
       if (!response.ok) {
         const errorData = await response.json();
         console.log('Failed to add followed area:', errorData);
         return;
       }
 
+      // Go back to the previous screen after successful creation.
       router.back();
     } catch (error) {
+      // Handle network or unexpected request errors.
       console.log('Network error while adding followed area:', error);
     } finally {
+      // Always stop the loading state when the request finishes.
       setLoading(false);
     }
   };
@@ -71,6 +84,7 @@ export default function AddFollowedAreaScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Header section with back navigation and screen title */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back to Followed Areas</Text>
@@ -82,6 +96,7 @@ export default function AddFollowedAreaScreen() {
           </Text>
         </View>
 
+        {/* Search input section */}
         <View style={styles.searchSection}>
           <Text style={styles.inputLabel}>Search City</Text>
           <TextInput
@@ -92,10 +107,12 @@ export default function AddFollowedAreaScreen() {
           />
         </View>
 
+        {/* Matching cities results list */}
         <View style={styles.resultsSection}>
           <Text style={styles.resultsTitle}>Matching Areas</Text>
 
           {filteredCities.map((city) => {
+            // Check whether this city is currently selected.
             const isSelected = selectedCity?.name === city.name;
 
             return (
@@ -124,6 +141,7 @@ export default function AddFollowedAreaScreen() {
           })}
         </View>
 
+        {/* Submit button for adding the selected area */}
         <Pressable
           style={[
             styles.addButton,

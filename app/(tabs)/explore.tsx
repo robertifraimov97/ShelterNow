@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import { API_BASE_URL } from '../../constants/api';
 
+// Represents an official shelter record returned from the backend.
 type OfficialShelter = {
   id: number;
   name: string;
@@ -21,6 +22,7 @@ type OfficialShelter = {
   last_verified_at?: string | null;
 };
 
+// Represents a ranked nearby shelter recommendation returned from the backend.
 type NearbyShelter = {
   id: number;
   name: string;
@@ -33,6 +35,7 @@ type NearbyShelter = {
   source: string;
 };
 
+// Represents the alerts response used to decide whether emergency mode is active.
 type AlertsResponse = {
   alert: {
     source: string;
@@ -51,6 +54,7 @@ type AlertsResponse = {
   };
 };
 
+// Formats shelter distance for display in the UI.
 function formatDistance(distanceMeters: number) {
   if (distanceMeters < 1000) {
     return `${distanceMeters} meters away`;
@@ -62,21 +66,34 @@ function formatDistance(distanceMeters: number) {
 export default function MapScreen() {
   const router = useRouter();
 
+  // Stores the user's current GPS coordinates.
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
 
+  // Stores the user's current detected city.
   const [currentCity, setCurrentCity] = useState<string | null>(null);
+
+  // Controls whether the screen should use emergency shelter logic.
   const [isEmergencyMode, setIsEmergencyMode] = useState(false);
 
+  // Controls visibility of the "Center on Me" button after map movement.
   const [showCenterButton, setShowCenterButton] = useState(false);
+
+  // Stores all official shelters displayed on the map.
   const [officialShelters, setOfficialShelters] = useState<OfficialShelter[]>([]);
+
+  // Stores the nearby shelters list shown below the map.
   const [nearbyShelters, setNearbyShelters] = useState<NearbyShelter[]>([]);
+
+  // Tracks loading state while shelters and location data are being fetched.
   const [loadingShelters, setLoadingShelters] = useState(true);
 
+  // Reference to the MapView so the app can recenter it programmatically.
   const mapRef = useRef<MapView | null>(null);
 
+  // Loads all official shelters from the backend and keeps only those with coordinates.
   const loadOfficialShelters = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/shelters/`);
@@ -93,6 +110,7 @@ export default function MapScreen() {
     }
   };
 
+  // Determines whether emergency mode should be enabled based on current city alerts.
   const resolveEmergencyMode = async (cityName: string | null) => {
     try {
       const params = new URLSearchParams();
@@ -110,6 +128,8 @@ export default function MapScreen() {
 
       const data: AlertsResponse = await response.json();
 
+      // Emergency mode is enabled if the alert response indicates
+      // that the current location is affected or shelter guidance should be offered.
       const shouldUseEmergencyShelterFlow =
         data.relevance.current_location_match ||
         data.relevance.show_nearest_shelter_button ||
@@ -128,6 +148,8 @@ export default function MapScreen() {
     }
   };
 
+  // Loads nearby shelter recommendations for the user,
+  // using either normal mode or emergency mode endpoints.
   const loadNearbyShelters = async (
     latitude: number,
     longitude: number,
@@ -168,6 +190,8 @@ export default function MapScreen() {
     }
   };
 
+  // Loads all data needed for the screen:
+  // location, current city, emergency mode, official shelters, and nearby shelters.
   const loadExploreScreenData = async () => {
     try {
       setLoadingShelters(true);
@@ -217,10 +241,12 @@ export default function MapScreen() {
     }
   };
 
+  // Load screen data once when the component mounts.
   useEffect(() => {
     loadExploreScreenData();
   }, []);
 
+  // Reload the screen data whenever the screen comes back into focus.
   useFocusEffect(
     useCallback(() => {
       loadExploreScreenData();
@@ -230,6 +256,7 @@ export default function MapScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Header section with title and mode-aware subtitle */}
         <View style={styles.header}>
           <Text style={styles.title}>Nearby Protected Areas</Text>
           <Text style={styles.subtitle}>
@@ -239,6 +266,7 @@ export default function MapScreen() {
           </Text>
         </View>
 
+        {/* Map section showing the user location and official shelters */}
         <View style={styles.mapSection}>
           <Text style={styles.mapLabel}>Map View</Text>
 
@@ -270,6 +298,7 @@ export default function MapScreen() {
                     setShowCenterButton(movedAway);
                   }}
                 >
+                  {/* Marker for the user's current location */}
                   <Marker
                     coordinate={{
                       latitude: userLocation.latitude,
@@ -280,6 +309,7 @@ export default function MapScreen() {
                     pinColor="red"
                   />
 
+                  {/* Markers for all official shelters with coordinates */}
                   {officialShelters.map((shelter) => (
                     <Marker
                       key={shelter.id}
@@ -294,6 +324,7 @@ export default function MapScreen() {
                   ))}
                 </MapView>
 
+                {/* Button that re-centers the map on the user's location */}
                 {showCenterButton && (
                   <Pressable
                     style={styles.centerButton}
@@ -316,6 +347,7 @@ export default function MapScreen() {
                   </Pressable>
                 )}
 
+                {/* Button that opens the dedicated full map screen */}
                 <Pressable
                   style={styles.fullMapButton}
                   onPress={() => router.push('/full-map')}
@@ -331,6 +363,7 @@ export default function MapScreen() {
           </View>
         </View>
 
+        {/* Nearby shelters list section */}
         <View style={styles.listSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Nearby Options</Text>

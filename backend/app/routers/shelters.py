@@ -5,17 +5,20 @@ from app.db.database import get_db
 from app.db.models import Shelter
 from app.schemas.shelter import ShelterCreate, ShelterResponse
 
+# Create a router for shelter-related endpoints.
 router = APIRouter(prefix="/shelters", tags=["Shelters"])
 
 
 @router.get("/", response_model=list[ShelterResponse])
 def get_shelters(db: Session = Depends(get_db)):
+    # Fetch and return all shelters from the database.
     shelters = db.query(Shelter).all()
     return shelters
 
 
 @router.post("/", response_model=ShelterResponse)
 def create_shelter(shelter: ShelterCreate, db: Session = Depends(get_db)):
+    # Create a new shelter record using the data received in the request body.
     new_shelter = Shelter(
         name=shelter.name,
         city=shelter.city,
@@ -31,8 +34,10 @@ def create_shelter(shelter: ShelterCreate, db: Session = Depends(get_db)):
         last_verified_at=shelter.last_verified_at,
     )
 
+    # Save the new shelter to the database.
     db.add(new_shelter)
     db.commit()
     db.refresh(new_shelter)
 
+    # Return the newly created shelter.
     return new_shelter

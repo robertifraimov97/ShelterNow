@@ -5,6 +5,7 @@ import * as Location from 'expo-location';
 import { API_BASE_URL } from '../../constants/api';
 import { registerForPushNotificationsAsync } from '../../services/pushNotifications';
 
+// Represents a followed area returned from the backend.
 type FollowedArea = {
   id: number;
   user_identifier: string;
@@ -14,6 +15,7 @@ type FollowedArea = {
   created_at: string;
 };
 
+// Describes how relevant the current alert is to the user.
 type AlertRelevance = {
   priority: 'emergency' | 'followed_area' | 'none';
   match_strategy: string;
@@ -23,6 +25,7 @@ type AlertRelevance = {
   show_nearest_shelter_button: boolean;
 };
 
+// Describes the classification of the current alert event.
 type AlertClassification = {
   cat: string | null;
   event_type: string;
@@ -34,6 +37,7 @@ type AlertClassification = {
   source_signals?: Record<string, any>;
 };
 
+// Describes the product/UI behavior that should happen for the alert.
 type AlertExperience = {
   focus_mode: 'normal' | 'current_location_warning' | 'current_location_emergency';
   show_nearest_shelter_button: boolean;
@@ -46,6 +50,7 @@ type AlertExperience = {
   push_notification_type: string;
 };
 
+// Full alerts response returned from the backend.
 type AlertsResponse = {
   alert: {
     source: string;
@@ -58,11 +63,20 @@ type AlertsResponse = {
 };
 
 export default function AlertsScreen() {
+  // State for all followed areas chosen by the user.
   const [followedAreas, setFollowedAreas] = useState<FollowedArea[]>([]);
+
+  // State for the screen loading status.
   const [loading, setLoading] = useState(true);
+
+  // State for the user's currently detected city/area name.
   const [currentAreaName, setCurrentAreaName] = useState('Loading location...');
+
+  // State for the alerts response returned from the backend.
   const [alertsResponse, setAlertsResponse] = useState<AlertsResponse | null>(null);
 
+  // Get the current city/area name by requesting location permission,
+  // fetching device coordinates, and reverse geocoding them.
   const getCurrentAreaName = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
 
@@ -85,18 +99,22 @@ export default function AlertsScreen() {
     return place.city || place.subregion || place.region || 'Unknown area';
   };
 
+  // Load followed areas, current location, and alert information from the backend.
   const loadInitialData = async () => {
     try {
       setLoading(true);
 
+      // Load followed areas from the backend.
       const followedResponse = await fetch(`${API_BASE_URL}/followed-areas/`);
       const followedData: FollowedArea[] = await followedResponse.json();
 
+      // Detect the user's current city/area.
       const cityName = await getCurrentAreaName();
 
       setFollowedAreas(followedData);
       setCurrentAreaName(cityName);
 
+      // Build query parameters for the alerts endpoint.
       const params = new URLSearchParams();
 
       if (
@@ -111,6 +129,7 @@ export default function AlertsScreen() {
         params.append('followed_areas', area.area_name);
       });
 
+      // Load alert data based on current city and followed areas.
       const alertsResponse = await fetch(`${API_BASE_URL}/alerts/?${params.toString()}`);
       const alertsData: AlertsResponse = await alertsResponse.json();
 
@@ -122,21 +141,24 @@ export default function AlertsScreen() {
     }
   };
 
- useFocusEffect(
-  useCallback(() => {
-    loadInitialData();
+  // Reload alerts data every time the screen comes into focus,
+  // and also try to register the device for push notifications.
+  useFocusEffect(
+    useCallback(() => {
+      loadInitialData();
 
-    registerForPushNotificationsAsync()
-      .then((token) => {
-        console.log('Push token:', token);
-      })
-      .catch((error) => {
-        console.error('Push registration failed:', error);
-      });
+      registerForPushNotificationsAsync()
+        .then((token) => {
+          console.log('Push token:', token);
+        })
+        .catch((error) => {
+          console.error('Push registration failed:', error);
+        });
 
-  }, [])
-);
+    }, [])
+  );
 
+  // Convenience values derived from the loaded alerts response.
   const priority = alertsResponse?.relevance.priority || 'none';
   const hasActiveAlert = alertsResponse?.alert.has_active_alert || false;
   const rawAlert = alertsResponse?.alert.raw || {};
@@ -149,36 +171,45 @@ export default function AlertsScreen() {
   const currentLocationAlert =
     alertsResponse?.relevance.current_location_alert;
 
+  // Combine the current-location alert area and all matched followed areas.
   const relevantAreas = [
     ...(currentLocationAlert ? [currentLocationAlert] : []),
     ...matchedFollowedAreas,
   ];
 
+  // Remove duplicates from the relevant areas list.
   const uniqueRelevantAreas = Array.from(new Set(relevantAreas));
 
   const classification = alertsResponse?.classification;
   const experience = alertsResponse?.experience;
 
+  // UI mode decided by the backend alert experience layer.
   const focusMode = experience?.focus_mode || 'normal';
 
+  // Whether the user's current location is in an emergency state.
   const isCurrentLocationEmergency =
     focusMode === 'current_location_emergency';
 
+  // Whether the user's current location is in a warning state.
   const isCurrentLocationWarning =
     focusMode === 'current_location_warning';
 
+  // Whether to show the shelter call-to-action button.
   const shouldShowShelterButton =
     experience?.show_nearest_shelter_button ||
     alertsResponse?.relevance.show_nearest_shelter_button ||
     false;
 
+  // Whether to show a followed-area banner.
   const shouldShowFollowedAreaBanner =
     experience?.show_followed_area_banner ??
     priority === 'followed_area';
 
+  // Final flags used for coloring and styling the status card.
   const isEmergency = isCurrentLocationEmergency;
   const isWarning = isCurrentLocationWarning || shouldShowFollowedAreaBanner;
 
+  // Main status text shown in the status card.
   const statusText = loading
     ? 'Checking alerts...'
     : isCurrentLocationEmergency
@@ -189,6 +220,7 @@ export default function AlertsScreen() {
           ? 'Alert in followed area'
           : 'No active alert';
 
+  // Short status label shown in the current alert feed card.
   const feedStatusText = isCurrentLocationEmergency
     ? 'Emergency'
     : isCurrentLocationWarning
@@ -202,6 +234,7 @@ export default function AlertsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Screen header */}
         <View style={styles.header}>
           <Text style={styles.title}>Emergency Alerts</Text>
           <Text style={styles.subtitle}>
@@ -209,6 +242,7 @@ export default function AlertsScreen() {
           </Text>
         </View>
 
+        {/* Main current-area status card */}
         <View
           style={[
             styles.statusCard,
@@ -230,6 +264,7 @@ export default function AlertsScreen() {
 
           <Text style={styles.cardInfo}>{currentAreaName}</Text>
 
+          {/* Extra alert details shown only when an active alert exists */}
           {hasActiveAlert && (
             <View style={styles.alertDetailsBox}>
               <Text style={styles.alertTitle}>{alertTitle}</Text>
@@ -252,6 +287,7 @@ export default function AlertsScreen() {
             </View>
           )}
 
+          {/* Shelter CTA shown only when the backend says shelter guidance should be offered */}
           {shouldShowShelterButton && (
             <View style={styles.ctaButton}>
               <Text style={styles.ctaButtonText}>Find nearest shelter</Text>
@@ -259,6 +295,7 @@ export default function AlertsScreen() {
           )}
         </View>
 
+        {/* Followed areas section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Followed Areas</Text>
 
@@ -268,10 +305,12 @@ export default function AlertsScreen() {
             <Text style={styles.helperText}>No followed areas yet.</Text>
           ) : (
             followedAreas.map((area) => {
+              // Check whether this followed area currently matches the alert.
               const hasMatchedAlert = matchedFollowedAreas.includes(area.area_name);
               const followedAreaSeverity = classification?.severity || 'none';
               const followedAreaEventType = classification?.event_type || 'none';
 
+              // Text shown as the main followed-area status.
               const followedAreaStatusText =
                 hasMatchedAlert && followedAreaSeverity === 'critical'
                   ? 'Active alert'
@@ -283,6 +322,7 @@ export default function AlertsScreen() {
                         ? 'Alert update'
                         : 'No active alert';
 
+              // Secondary text shown under the main followed-area status.
               const followedAreaSubText =
                 hasMatchedAlert && followedAreaEventType === 'prepare_near_shelter'
                   ? 'Prepare near shelter'
@@ -323,6 +363,7 @@ export default function AlertsScreen() {
           )}
         </View>
 
+        {/* Current alert feed section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Current Alert Feed</Text>
 
@@ -357,6 +398,7 @@ export default function AlertsScreen() {
   );
 }
 
+// Component styles for the alerts screen UI.
 const styles = StyleSheet.create({
   container: {
     flex: 1,

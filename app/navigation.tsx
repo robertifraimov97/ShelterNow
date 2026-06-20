@@ -6,17 +6,20 @@ import { useEffect, useRef, useState } from 'react';
 import { API_BASE_URL } from '../constants/api';
 import { styles } from '../styles/home.styles';
 
+// Represents a single coordinate point in the route path.
 type RoutePoint = {
   latitude: number;
   longitude: number;
 };
 
+// Represents one step/instruction in the walking navigation route.
 type RouteInstruction = {
   instruction: string;
   distance_meters: number;
   duration_seconds: number;
 };
 
+// Represents the full walking route response returned from the backend.
 type WalkingRouteResponse = {
   distance_meters: number;
   duration_seconds: number;
@@ -24,6 +27,7 @@ type WalkingRouteResponse = {
   instructions: RouteInstruction[];
 };
 
+// Formats distance for UI display.
 function formatDistance(distanceMeters: number) {
   if (distanceMeters < 1000) {
     return `${distanceMeters.toFixed(0)}m`;
@@ -32,11 +36,14 @@ function formatDistance(distanceMeters: number) {
   return `${(distanceMeters / 1000).toFixed(1)}km`;
 }
 
+// Formats duration in seconds into minutes for UI display.
 function formatDuration(durationSeconds: number) {
   const minutes = Math.max(1, Math.round(durationSeconds / 60));
   return `${minutes} min`;
 }
 
+// Calculates straight-line distance between two coordinates using the Haversine formula.
+// Used here to decide when the user moved enough to trigger route recalculation.
 function calculateDistanceMeters(
   lat1: number,
   lon1: number,
@@ -65,11 +72,13 @@ export default function NavigationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
+  // Extract shelter data passed through route params.
   const shelterName = String(params.name || '');
   const shelterLatitude = Number(params.latitude);
   const shelterLongitude = Number(params.longitude);
   const shelterSource = String(params.source || 'Official');
 
+  // Determine visual behavior based on whether the destination is a community shelter.
   const isCommunityShelter = shelterSource === 'Community';
   const destinationPinColor = isCommunityShelter ? 'purple' : 'blue';
   const routeColor = isCommunityShelter ? '#7C3AED' : '#2563EB';
@@ -77,23 +86,30 @@ export default function NavigationScreen() {
     ? 'Community shelter'
     : 'Official shelter';
 
+  // User's live location.
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
 
+  // Route geometry and metadata returned from the backend.
   const [walkingRoute, setWalkingRoute] = useState<RoutePoint[]>([]);
   const [routeDistance, setRouteDistance] = useState<number | null>(null);
   const [routeDuration, setRouteDuration] = useState<number | null>(null);
   const [instructions, setInstructions] = useState<RouteInstruction[]>([]);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
 
+  // Ref to control the map programmatically.
   const mapRef = useRef<MapView | null>(null);
+
+  // Stores the last location from which a reroute was calculated,
+  // so route recalculation only happens after enough user movement.
   const lastRerouteLocationRef = useRef<{
     latitude: number;
     longitude: number;
   } | null>(null);
 
+  // Requests a walking route from the backend routing endpoint.
   const loadWalkingRoute = async (
     startLatitude: number,
     startLongitude: number,
@@ -116,6 +132,7 @@ export default function NavigationScreen() {
         }),
       });
 
+      // If the backend fails, clear existing route data.
       if (!response.ok) {
         console.log('Failed to load walking route');
         setWalkingRoute([]);
@@ -125,11 +142,13 @@ export default function NavigationScreen() {
 
       const data: WalkingRouteResponse = await response.json();
 
+      // Save the new route and instruction data.
       setWalkingRoute(data.route_coordinates || []);
       setRouteDistance(data.distance_meters || 0);
       setRouteDuration(data.duration_seconds || 0);
       setInstructions(data.instructions || []);
 
+      // Save the user location used for this route calculation.
       lastRerouteLocationRef.current = {
         latitude: startLatitude,
         longitude: startLongitude,
@@ -147,6 +166,7 @@ export default function NavigationScreen() {
     let locationSubscription: Location.LocationSubscription | null = null;
 
     const startWatchingLocation = async () => {
+      // Ask for foreground location permission.
       const { status } = await Location.requestForegroundPermissionsAsync();
 
       if (status !== 'granted') {
@@ -154,6 +174,7 @@ export default function NavigationScreen() {
         return;
       }
 
+      // Get the current location once when the screen starts.
       const currentLocation = await Location.getCurrentPositionAsync({});
 
       const initialUserLocation = {
@@ -163,6 +184,7 @@ export default function NavigationScreen() {
 
       setUserLocation(initialUserLocation);
 
+      // Load the initial route from the current location to the shelter.
       await loadWalkingRoute(
         initialUserLocation.latitude,
         initialUserLocation.longitude,
@@ -170,6 +192,7 @@ export default function NavigationScreen() {
         shelterLongitude
       );
 
+      // Start watching live location updates to reroute when needed.
       locationSubscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
@@ -186,10 +209,13 @@ export default function NavigationScreen() {
 
           const lastRerouteLocation = lastRerouteLocationRef.current;
 
+          // Avoid rerouting if there is no previous route point
+          // or if a route request is already in progress.
           if (!lastRerouteLocation || isLoadingRoute) {
             return;
           }
 
+          // Check how far the user moved since the last reroute.
           const movedDistance = calculateDistanceMeters(
             lastRerouteLocation.latitude,
             lastRerouteLocation.longitude,
@@ -197,6 +223,7 @@ export default function NavigationScreen() {
             updatedLocation.longitude
           );
 
+          // Recalculate route only after meaningful movement.
           if (movedDistance >= 20) {
             await loadWalkingRoute(
               updatedLocation.latitude,
@@ -211,6 +238,7 @@ export default function NavigationScreen() {
 
     startWatchingLocation();
 
+    // Clean up the live location subscription when the screen unmounts.
     return () => {
       if (locationSubscription) {
         locationSubscription.remove();
@@ -218,14 +246,17 @@ export default function NavigationScreen() {
     };
   }, [shelterLatitude, shelterLongitude]);
 
+  // Show only the first/current instruction in the instruction overlay.
   const currentInstruction = instructions.length > 0 ? instructions[0] : null;
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Hide the default Expo Router header for this screen */}
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={[styles.content, { flex: 1 }]}>
         <View style={styles.header}>
+          {/* Back button */}
           <Pressable
             style={{
               alignSelf: 'flex-start',
@@ -245,6 +276,7 @@ export default function NavigationScreen() {
           <Text style={styles.subtitle}>Walk safely to your selected shelter</Text>
         </View>
 
+        {/* Main route summary card */}
         <View style={styles.mainCard}>
           <Text style={styles.cardTitle}>Destination</Text>
           <Text style={styles.cardName}>{shelterName || 'Shelter'}</Text>
@@ -264,6 +296,7 @@ export default function NavigationScreen() {
           </Text>
         </View>
 
+        {/* Map and live navigation section */}
         <View style={[styles.mapSection, { flex: 1 }]}>
           <Text style={styles.mapTitle}>Navigation Map</Text>
 
@@ -281,6 +314,7 @@ export default function NavigationScreen() {
                   }}
                   showsUserLocation={false}
                 >
+                  {/* Marker for user's current location */}
                   <Marker
                     coordinate={{
                       latitude: userLocation.latitude,
@@ -291,6 +325,7 @@ export default function NavigationScreen() {
                     pinColor="red"
                   />
 
+                  {/* Marker for the destination shelter */}
                   <Marker
                     coordinate={{
                       latitude: shelterLatitude,
@@ -301,6 +336,7 @@ export default function NavigationScreen() {
                     pinColor={destinationPinColor}
                   />
 
+                  {/* Route polyline */}
                   {walkingRoute.length > 0 && (
                     <Polyline
                       coordinates={walkingRoute}
@@ -310,6 +346,7 @@ export default function NavigationScreen() {
                   )}
                 </MapView>
 
+                {/* Recenter button */}
                 <Pressable
                   style={{
                     position: 'absolute',
@@ -349,6 +386,7 @@ export default function NavigationScreen() {
                   </Text>
                 </Pressable>
 
+                {/* Overlay card showing the current navigation instruction */}
                 {currentInstruction && (
                   <View
                     style={{

@@ -9,11 +9,13 @@ from app.schemas.submitted_shelter import (
 )
 from app.services.geocoding import geocode_address
 
+# Create a router for submitted shelter-related endpoints.
 router = APIRouter(prefix="/submitted-shelters", tags=["Submitted Shelters"])
 
 
 @router.get("/", response_model=list[SubmittedShelterResponse])
 def get_submitted_shelters(db: Session = Depends(get_db)):
+    # Fetch and return all user-submitted shelters from the database.
     submitted_shelters = db.query(SubmittedShelter).all()
     return submitted_shelters
 
@@ -23,14 +25,18 @@ def create_submitted_shelter(
     submitted_shelter: SubmittedShelterCreate,
     db: Session = Depends(get_db)
 ):
+    # Try to geocode the submitted address in order to get map coordinates.
     coordinates = geocode_address(
         address=submitted_shelter.address,
         city=submitted_shelter.city,
     )
 
+    # Extract latitude and longitude only if geocoding succeeded.
     latitude = coordinates["latitude"] if coordinates else None
     longitude = coordinates["longitude"] if coordinates else None
 
+    # Create a new submitted shelter record using the request data
+    # and any coordinates resolved from geocoding.
     new_submitted_shelter = SubmittedShelter(
         name=submitted_shelter.name,
         city=submitted_shelter.city,
@@ -45,8 +51,10 @@ def create_submitted_shelter(
         review_notes=submitted_shelter.review_notes,
     )
 
+    # Save the submitted shelter to the database.
     db.add(new_submitted_shelter)
     db.commit()
     db.refresh(new_submitted_shelter)
 
+    # Return the newly created submitted shelter.
     return new_submitted_shelter

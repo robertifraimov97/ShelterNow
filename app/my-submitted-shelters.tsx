@@ -3,6 +3,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { API_BASE_URL } from '../constants/api';
 
+// Represents a shelter submitted by a user and returned from the backend.
 type SubmittedShelter = {
   id: number;
   name: string;
@@ -21,10 +22,16 @@ type SubmittedShelter = {
 };
 
 export default function MySubmittedSheltersScreen() {
+  // Router instance used for navigation between screens.
   const router = useRouter();
+
+  // Stores the submitted shelters loaded from the backend.
   const [submittedShelters, setSubmittedShelters] = useState<SubmittedShelter[]>([]);
+
+  // Controls the loading state while data is being fetched.
   const [loading, setLoading] = useState(true);
 
+  // Loads all submitted shelters from the backend API.
   const loadSubmittedShelters = async () => {
     try {
       setLoading(true);
@@ -40,12 +47,14 @@ export default function MySubmittedSheltersScreen() {
     }
   };
 
+  // Reload the submitted shelters list whenever the screen comes into focus.
   useFocusEffect(
     useCallback(() => {
       loadSubmittedShelters();
     }, [])
   );
 
+  // Converts backend submission status values into user-friendly labels.
   const getStatusLabel = (status: string) => {
     if (status === 'approved') return 'Approved';
     if (status === 'rejected') return 'Rejected';
@@ -55,6 +64,7 @@ export default function MySubmittedSheltersScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Header section with back button and screen title */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -66,6 +76,7 @@ export default function MySubmittedSheltersScreen() {
           </Text>
         </View>
 
+        {/* Main list section that handles loading, empty, and populated states */}
         <View style={styles.listSection}>
           {loading ? (
             <Text style={styles.helperText}>Loading submitted shelters...</Text>
@@ -74,18 +85,21 @@ export default function MySubmittedSheltersScreen() {
           ) : (
             submittedShelters.map((shelter) => (
               <View key={shelter.id} style={styles.shelterCard}>
+                {/* Basic shelter details */}
                 <Text style={styles.shelterName}>{shelter.name}</Text>
                 <Text style={styles.shelterInfo}>
                   {shelter.address || shelter.city}
                 </Text>
                 <Text style={styles.shelterInfo}>Community submission</Text>
 
+                {/* Status badge showing the current review state */}
                 <View style={styles.statusBadge}>
                   <Text style={styles.statusBadgeText}>
                     {getStatusLabel(shelter.submission_status)}
                   </Text>
                 </View>
 
+                {/* Action buttons for editing or deleting the shelter */}
                 <View style={styles.actionsRow}>
                   <Pressable
                     style={styles.editButton}

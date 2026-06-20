@@ -3,6 +3,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { API_BASE_URL } from '../constants/api';
 
+// Represents a followed area record returned from the backend.
 type FollowedArea = {
   id: number;
   user_identifier: string;
@@ -13,11 +14,19 @@ type FollowedArea = {
 };
 
 export default function FollowedAreasScreen() {
+  // Router instance used for navigation between screens.
   const router = useRouter();
+
+  // State for all followed areas loaded from the backend.
   const [areas, setAreas] = useState<FollowedArea[]>([]);
+
+  // State for the loading indicator while areas are being fetched.
   const [loading, setLoading] = useState(true);
+
+  // State for tracking which area is currently being deleted.
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // Loads the followed areas list from the backend API.
   const loadFollowedAreas = async () => {
     try {
       setLoading(true);
@@ -33,6 +42,7 @@ export default function FollowedAreasScreen() {
     }
   };
 
+  // Deletes a followed area by ID and removes it from local state if successful.
   const handleRemoveArea = async (id: number) => {
     try {
       setDeletingId(id);
@@ -55,6 +65,7 @@ export default function FollowedAreasScreen() {
     }
   };
 
+  // Reload the followed areas list whenever this screen gains focus.
   useFocusEffect(
     useCallback(() => {
       loadFollowedAreas();
@@ -64,6 +75,7 @@ export default function FollowedAreasScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Header section with back button and screen description */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -75,12 +87,14 @@ export default function FollowedAreasScreen() {
           </Text>
         </View>
 
+        {/* Button to navigate to the screen for adding a new followed area */}
         <Pressable
           style={styles.addButton}
           onPress={() => router.push('/add-followed-area')}>
           <Text style={styles.addButtonText}>Add Area</Text>
         </Pressable>
 
+        {/* Main list section showing loading state, empty state, or followed areas */}
         <View style={styles.listSection}>
           {loading ? (
             <Text style={styles.helperText}>Loading followed areas...</Text>
@@ -89,14 +103,17 @@ export default function FollowedAreasScreen() {
           ) : (
             areas.map((area) => (
               <View key={area.id} style={styles.areaCard}>
+                {/* Display the followed area name */}
                 <Text style={styles.areaName}>{area.area_name}</Text>
 
+                {/* Optional label badge shown only if the area has a label */}
                 {area.label ? (
                   <View style={styles.statusBadge}>
                     <Text style={styles.statusBadgeText}>{area.label}</Text>
                   </View>
                 ) : null}
 
+                {/* Button to remove the selected followed area */}
                 <Pressable
                   style={styles.removeButton}
                   onPress={() => handleRemoveArea(area.id)}

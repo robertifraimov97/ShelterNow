@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import * as Location from 'expo-location';
 import { API_BASE_URL } from '../constants/api';
 
+// Represents a nearby shelter returned from the recommendation endpoints.
 type NearbyShelter = {
   id: number;
   name: string;
@@ -16,6 +17,7 @@ type NearbyShelter = {
   source: string;
 };
 
+// Represents the alerts response used to determine whether emergency mode is active.
 type AlertsResponse = {
   alert: {
     source: string;
@@ -34,6 +36,7 @@ type AlertsResponse = {
   };
 };
 
+// Formats distance for user-friendly display in the shelters list.
 function formatDistance(distanceMeters: number) {
   if (distanceMeters < 1000) {
     return `${distanceMeters} meters away`;
@@ -43,13 +46,22 @@ function formatDistance(distanceMeters: number) {
 }
 
 export default function SheltersListScreen() {
+  // Router instance used for navigating back and opening navigation screen.
   const router = useRouter();
 
+  // Stores the nearby shelters loaded from the backend.
   const [nearbyShelters, setNearbyShelters] = useState<NearbyShelter[]>([]);
+
+  // Controls the loading state while shelter data is being fetched.
   const [loadingShelters, setLoadingShelters] = useState(true);
+
+  // Stores any location-related or loading error message shown to the user.
   const [locationError, setLocationError] = useState('');
+
+  // Indicates whether the current location is in emergency mode.
   const [isEmergencyMode, setIsEmergencyMode] = useState(false);
 
+  // Loads alert state for the current city and updates emergency mode accordingly.
   const loadAlertsState = async (cityName: string | null) => {
     try {
       const params = new URLSearchParams();
@@ -67,6 +79,8 @@ export default function SheltersListScreen() {
 
       const data: AlertsResponse = await response.json();
 
+      // Decide whether the app should use the emergency shelter flow
+      // based on relevance and experience fields returned by the alerts API.
       const shouldUseEmergencyShelterFlow =
         data.relevance.current_location_match ||
         data.relevance.show_nearest_shelter_button ||
@@ -82,11 +96,14 @@ export default function SheltersListScreen() {
     }
   };
 
+  // Loads nearby shelters based on the user's current location
+  // and switches between normal and emergency recommendation endpoints if needed.
   const loadNearbyShelters = async () => {
     try {
       setLoadingShelters(true);
       setLocationError('');
 
+      // Ask for foreground location permission before accessing user location.
       const { status } = await Location.requestForegroundPermissionsAsync();
 
       if (status !== 'granted') {
@@ -95,11 +112,13 @@ export default function SheltersListScreen() {
         return;
       }
 
+      // Get the user's current GPS location.
       const location = await Location.getCurrentPositionAsync({});
 
       let cityName: string | null = null;
 
       try {
+        // Reverse geocode the coordinates into a city/subregion/region name.
         const reverseGeocoded = await Location.reverseGeocodeAsync({
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
@@ -113,6 +132,7 @@ export default function SheltersListScreen() {
         console.log('Failed to reverse geocode current city for shelters list:', error);
       }
 
+      // Load alert-based emergency state for the resolved city.
       await loadAlertsState(cityName);
 
       const alertsParams = new URLSearchParams();
@@ -123,6 +143,7 @@ export default function SheltersListScreen() {
       let useEmergencyMode = false;
 
       try {
+        // Fetch alerts again to confirm whether emergency shelter flow should be used.
         const alertsResponse = await fetch(`${API_BASE_URL}/alerts/?${alertsParams.toString()}`);
 
         if (alertsResponse.ok) {
@@ -145,10 +166,12 @@ export default function SheltersListScreen() {
         setIsEmergencyMode(false);
       }
 
+      // Choose the appropriate nearby shelters endpoint depending on emergency state.
       const endpoint = useEmergencyMode
         ? `${API_BASE_URL}/recommendations/nearby-emergency-shelters`
         : `${API_BASE_URL}/recommendations/nearby-shelters`;
 
+      // Request ranked nearby shelters from the backend.
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -177,6 +200,7 @@ export default function SheltersListScreen() {
     }
   };
 
+  // Reload the nearby shelters every time the screen becomes focused.
   useFocusEffect(
     useCallback(() => {
       loadNearbyShelters();
@@ -186,6 +210,7 @@ export default function SheltersListScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Header section with back button and emergency mode indicator */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -199,6 +224,7 @@ export default function SheltersListScreen() {
           </Text>
         </View>
 
+        {/* Main shelters list section with loading, error, empty, and content states */}
         <View style={styles.listSection}>
           {loadingShelters ? (
             <Text style={styles.helperText}>Loading shelters...</Text>
@@ -223,6 +249,7 @@ export default function SheltersListScreen() {
                   })
                 }
               >
+                {/* Shelter basic info */}
                 <Text style={styles.shelterName}>{shelter.name}</Text>
                 <Text style={styles.shelterInfo}>
                   {shelter.address || shelter.city}

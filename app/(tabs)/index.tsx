@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { styles } from '../../styles/home.styles';
 import { API_BASE_URL } from '../../constants/api';
 
+// Represents an official shelter object returned from the backend.
 type OfficialShelter = {
   id: number;
   name: string;
@@ -24,6 +25,7 @@ type OfficialShelter = {
   updated_at?: string;
 };
 
+// Represents the single best shelter recommendation returned from the backend.
 type BestShelterRecommendation = {
   id: number;
   name: string;
@@ -36,17 +38,20 @@ type BestShelterRecommendation = {
   source: string;
 };
 
+// Represents one coordinate point in a walking route polyline.
 type RoutePoint = {
   latitude: number;
   longitude: number;
 };
 
+// Represents the walking route response returned from the backend.
 type WalkingRouteResponse = {
   distance_meters: number;
   duration_seconds: number;
   route_coordinates: RoutePoint[];
 };
 
+// Represents the alerts response used to determine if emergency mode should be active.
 type AlertsResponse = {
   alert: {
     source: string;
@@ -65,6 +70,7 @@ type AlertsResponse = {
   };
 };
 
+// Formats a distance value for compact UI display.
 function formatDistance(distanceMeters: number) {
   if (distanceMeters < 1000) {
     return `${distanceMeters}m`;
@@ -76,22 +82,37 @@ function formatDistance(distanceMeters: number) {
 export default function HomeScreen() {
   const router = useRouter();
 
+  // Stores the user's current GPS location.
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
 
+  // Stores the detected current city name.
   const [currentCity, setCurrentCity] = useState<string | null>(null);
+
+  // Controls whether the screen should behave in emergency mode.
   const [isEmergencyMode, setIsEmergencyMode] = useState(false);
 
+  // Controls the visibility of the "Center on Me" button.
   const [showCenterButton, setShowCenterButton] = useState(false);
+
+  // Stores all official shelters for displaying markers on the map.
   const [officialShelters, setOfficialShelters] = useState<OfficialShelter[]>([]);
+
+  // Stores the best shelter recommendation for the current user location.
   const [bestShelter, setBestShelter] = useState<BestShelterRecommendation | null>(null);
+
+  // Stores the polyline points for the walking route to the best shelter.
   const [walkingRoute, setWalkingRoute] = useState<RoutePoint[]>([]);
+
+  // Tracks whether the best shelter data is currently loading.
   const [loadingBestShelter, setLoadingBestShelter] = useState(true);
 
+  // Reference to the map, used for animating back to the user's location.
   const mapRef = useRef<MapView | null>(null);
 
+  // Loads all official shelters from the backend and keeps only those with coordinates.
   const loadOfficialShelters = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/shelters/`);
@@ -108,6 +129,7 @@ export default function HomeScreen() {
     }
   };
 
+  // Checks the current alerts state to decide whether emergency mode should be enabled.
   const resolveEmergencyMode = async (cityName: string | null) => {
     try {
       const params = new URLSearchParams();
@@ -125,6 +147,8 @@ export default function HomeScreen() {
 
       const data: AlertsResponse = await response.json();
 
+      // Emergency mode becomes active if the user's location is affected
+      // or the backend experience/relevance layers say shelter guidance should be shown.
       const shouldUseEmergencyShelterFlow =
         data.relevance.current_location_match ||
         data.relevance.show_nearest_shelter_button ||
@@ -143,6 +167,8 @@ export default function HomeScreen() {
     }
   };
 
+  // Loads the best shelter recommendation from the backend.
+  // Uses a different endpoint depending on whether emergency mode is active.
   const loadBestShelterRecommendation = async (
     latitude: number,
     longitude: number,
@@ -182,6 +208,7 @@ export default function HomeScreen() {
     }
   };
 
+  // Loads the walking route from the user's location to the selected shelter.
   const loadWalkingRoute = async (
     startLatitude: number,
     startLongitude: number,
@@ -216,6 +243,8 @@ export default function HomeScreen() {
     }
   };
 
+  // Loads all main screen data:
+  // location, current city, emergency mode, official shelters, and best shelter recommendation.
   const loadHomeScreenData = async () => {
     try {
       setLoadingBestShelter(true);
@@ -269,16 +298,20 @@ export default function HomeScreen() {
     }
   };
 
+  // Initial screen data load when the component mounts.
   useEffect(() => {
     loadHomeScreenData();
   }, []);
 
+  // Reloads the screen data whenever the screen becomes focused again.
   useFocusEffect(
     useCallback(() => {
       loadHomeScreenData();
     }, [])
   );
 
+  // Whenever the user location or best shelter changes,
+  // reload the walking route between them.
   useEffect(() => {
     if (!userLocation || !bestShelter) {
       setWalkingRoute([]);
@@ -296,23 +329,26 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
+        {/* App header */}
         <View style={styles.header}>
           <Text style={styles.appName}>ShelterNow</Text>
           <Text style={styles.subtitle}>Emergency shelter guidance</Text>
         </View>
 
-          <View style={styles.statusCard}>
-            <Text style={styles.statusLabel}>Status</Text>
-            <Text
-              style={[
-                styles.statusValue,
-                { color: isEmergencyMode ? '#DC2626' : '#16A34A' },
-              ]}
-            >
-              {isEmergencyMode ? 'Emergency Mode' : 'All Clear'}
-            </Text>
-          </View>
+        {/* Status card showing whether the app is currently in emergency mode */}
+        <View style={styles.statusCard}>
+          <Text style={styles.statusLabel}>Status</Text>
+          <Text
+            style={[
+              styles.statusValue,
+              { color: isEmergencyMode ? '#DC2626' : '#16A34A' },
+            ]}
+          >
+            {isEmergencyMode ? 'Emergency Mode' : 'All Clear'}
+          </Text>
+        </View>
 
+        {/* Main card showing the best recommended shelter */}
         <View style={styles.mainCard}>
           <Text style={styles.cardTitle}>Nearest Shelter</Text>
 
@@ -340,6 +376,7 @@ export default function HomeScreen() {
             </>
           )}
 
+          {/* Main action button that opens navigation to the selected shelter */}
           <View style={styles.goButtonWrapper}>
             <View style={styles.emergencyButtonHalo}>
               <Pressable
@@ -367,6 +404,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Quick map preview section */}
         <View style={styles.mapSection}>
           <Text style={styles.mapTitle}>Quick Map Preview</Text>
 
@@ -398,6 +436,7 @@ export default function HomeScreen() {
                     setShowCenterButton(movedAway);
                   }}
                 >
+                  {/* Marker for the user's current location */}
                   <Marker
                     coordinate={{
                       latitude: userLocation.latitude,
@@ -408,6 +447,7 @@ export default function HomeScreen() {
                     pinColor="red"
                   />
 
+                  {/* Markers for all official shelters */}
                   {officialShelters.map((shelter) => (
                     <Marker
                       key={shelter.id}
@@ -421,6 +461,7 @@ export default function HomeScreen() {
                     />
                   ))}
 
+                  {/* Polyline showing the walking route to the best shelter */}
                   {walkingRoute.length > 0 && (
                     <Polyline
                       coordinates={walkingRoute}
@@ -432,6 +473,7 @@ export default function HomeScreen() {
                   )}
                 </MapView>
 
+                {/* Button to re-center the map on the user's location */}
                 {showCenterButton && (
                   <Pressable
                     style={styles.centerButton}
@@ -454,6 +496,7 @@ export default function HomeScreen() {
                   </Pressable>
                 )}
 
+                {/* Button to open the dedicated full map screen */}
                 <Pressable
                   style={styles.fullMapButton}
                   onPress={() => router.push('/full-map')}

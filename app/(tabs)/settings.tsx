@@ -2,11 +2,13 @@ import { SafeAreaView, View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 
 export default function ProfileScreen() {
+  // Router instance used for navigation to other screens.
   const router = useRouter();
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
+        {/* Screen header */}
         <View style={styles.header}>
           <Text style={styles.title}>Profile</Text>
           <Text style={styles.subtitle}>
@@ -14,24 +16,28 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>Current Preferences</Text>
+        {/* Summary card showing the current user preferences */}
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Current Preferences</Text>
 
-            <View style={styles.summaryBadgesRow}>
-              <View style={styles.summaryBadge}>
-                <Text style={styles.summaryBadgeText}>Mobility: Regular</Text>
-              </View>
-
-              <View style={styles.summaryBadge}>
-                <Text style={styles.summaryBadgeText}>Accessible Route: Off</Text>
-              </View>
+          <View style={styles.summaryBadgesRow}>
+            {/* Badge showing the current mobility preference */}
+            <View style={styles.summaryBadge}>
+              <Text style={styles.summaryBadgeText}>Mobility: Regular</Text>
             </View>
 
-            <Text style={styles.summaryHint}>
-              These preferences affect shelter guidance and route suggestions.
-            </Text>
+            {/* Badge showing whether accessible routing is enabled */}
+            <View style={styles.summaryBadge}>
+              <Text style={styles.summaryBadgeText}>Accessible Route: Off</Text>
+            </View>
           </View>
 
+          <Text style={styles.summaryHint}>
+            These preferences affect shelter guidance and route suggestions.
+          </Text>
+        </View>
+
+        {/* Menu section with navigation options */}
         <View style={styles.menuSection}>
           <Pressable
             style={styles.menuItem}

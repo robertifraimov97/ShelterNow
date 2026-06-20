@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import { API_BASE_URL } from '../constants/api';
 
+// Represents an official shelter object returned from the backend.
 type OfficialShelter = {
   id: number;
   name: string;
@@ -24,17 +25,25 @@ type OfficialShelter = {
 };
 
 export default function FullMapScreen() {
+  // Router instance used for navigating back to the previous screen.
   const router = useRouter();
+
+  // Reference to the map instance so the app can re-center it programmatically.
   const mapRef = useRef<MapView | null>(null);
 
+  // Stores the user's current GPS location.
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
 
+  // Controls whether the "Center on Me" button should be shown.
   const [showCenterButton, setShowCenterButton] = useState(false);
+
+  // Stores all official shelters loaded from the backend.
   const [officialShelters, setOfficialShelters] = useState<OfficialShelter[]>([]);
 
+  // Load the user's current location once when the screen first mounts.
   useEffect(() => {
     const getUserLocation = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -55,6 +64,7 @@ export default function FullMapScreen() {
     getUserLocation();
   }, []);
 
+  // Load all official shelters from the backend and keep only shelters with valid coordinates.
   const loadOfficialShelters = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/shelters/`);
@@ -71,6 +81,7 @@ export default function FullMapScreen() {
     }
   };
 
+  // Reload official shelters whenever this screen gains focus.
   useFocusEffect(
     useCallback(() => {
       loadOfficialShelters();
@@ -79,6 +90,7 @@ export default function FullMapScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header section with back button and screen title */}
       <View style={styles.header}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Back</Text>
@@ -87,6 +99,7 @@ export default function FullMapScreen() {
         <Text style={styles.title}>Full Map</Text>
       </View>
 
+      {/* Main map container */}
       <View style={styles.mapContainer}>
         {userLocation ? (
           <>
@@ -109,12 +122,15 @@ export default function FullMapScreen() {
                   region.longitude - userLocation.longitude
                 );
 
+                // Detect whether the map has moved far enough away from the user's location
+                // to justify showing the re-center button.
                 const movedAway =
                   latitudeDifference > 0.002 || longitudeDifference > 0.002;
 
                 setShowCenterButton(movedAway);
               }}
             >
+              {/* Marker for the user's current location */}
               <Marker
                 coordinate={{
                   latitude: userLocation.latitude,
@@ -124,6 +140,7 @@ export default function FullMapScreen() {
                 description="Current user position"
               />
 
+              {/* Markers for all official shelters */}
               {officialShelters.map((shelter) => (
                 <Marker
                   key={shelter.id}
@@ -138,6 +155,7 @@ export default function FullMapScreen() {
               ))}
             </MapView>
 
+            {/* Button that re-centers the map on the user's current location */}
             {showCenterButton && (
               <Pressable
                 style={styles.centerButton}
@@ -161,6 +179,7 @@ export default function FullMapScreen() {
             )}
           </>
         ) : (
+          // Fallback UI while the current location is still loading.
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>Loading your location...</Text>
           </View>

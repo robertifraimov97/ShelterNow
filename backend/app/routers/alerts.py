@@ -11,6 +11,7 @@ from app.services.test_alerts import (
 )
 
 
+# Create a router for all alert-related endpoints.
 router = APIRouter(prefix="/alerts", tags=["Alerts"])
 
 
@@ -39,7 +40,10 @@ def build_alert_response(
 
     This keeps ingestion, matching, classification and product behavior separated.
     """
+    # Extract the raw alert payload from the wrapped alert response.
     raw_alert = alert_data.get("raw", {})
+
+    # Read the list of affected areas from the raw alert if one exists.
     affected_areas = raw_alert.get("data", []) if raw_alert else []
 
     # Relevance layer:
@@ -78,7 +82,7 @@ def build_alert_response(
         classification=classification,
     )
 
-    # Response contract:
+    # Return the final alert API response with all decision layers included.
     # Frontend can keep using existing relevance fields,
     # but should gradually migrate to classification + experience.
     return {
@@ -101,8 +105,10 @@ def get_alerts(
     This lets us test:
     fake alert -> relevance -> classification -> experience -> frontend.
     """
+    # Check whether a fake test alert is currently active.
     active_test_alert = get_active_test_alert()
 
+    # If a test alert is active, use it instead of the real alert feed.
     if active_test_alert:
         alert_data = {
             "source": "test",
@@ -110,8 +116,10 @@ def get_alerts(
             "has_active_alert": True,
         }
     else:
+        # Otherwise, fetch the real current alerts.
         alert_data = get_current_alerts()
 
+    # Build and return the full structured alert response.
     return build_alert_response(
         alert_data=alert_data,
         current_city=current_city,
@@ -133,6 +141,7 @@ def test_relevance():
     POST /alerts/test-alerts/scenario/{scenario_name}
     then GET /alerts/
     """
+    # Hardcoded test alert used for development and pipeline validation.
     alert_data = {
         "source": "test",
         "raw": {
@@ -148,6 +157,7 @@ def test_relevance():
         "has_active_alert": True,
     }
 
+    # Return a test response using sample current and followed areas.
     return build_alert_response(
         alert_data=alert_data,
         current_city="כפר סבא",
@@ -164,11 +174,14 @@ def activate_test_alert_scenario(scenario_name: str):
     This is a development/testing endpoint.
     It should not be exposed in production without protection.
     """
+    # Try to activate the requested fake alert scenario.
     try:
         set_test_alert(scenario_name)
     except ValueError as error:
+        # Return 404 if the requested test scenario does not exist.
         raise HTTPException(status_code=404, detail=str(error))
 
+    # Return confirmation that the test alert scenario was activated.
     return {
         "status": "active",
         "scenario": scenario_name,
@@ -183,8 +196,10 @@ def deactivate_test_alert():
 
     After this, /alerts/ will return the real Home Front Command feed again.
     """
+    # Clear the currently active fake alert scenario.
     clear_test_alert()
 
+    # Return confirmation that the test alert was cleared.
     return {
         "status": "cleared",
         "message": "Test alert cleared.",
