@@ -111,3 +111,53 @@ class PushToken(Base):
 
     # Timestamp for when the token was first saved.
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# Stores backend-controlled emergency access windows per alert area.
+#
+# Important:
+# This does not expose community shelters by itself.
+# It only says:
+# "This area currently has an active emergency-access window."
+#
+# Actual shelter exposure is still controlled later by backend recommendation logic:
+# primary shelter + limited alternatives only.
+class EmergencyAccessState(Base):
+    __tablename__ = "emergency_access_states"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Canonical city / alert-area name.
+    #
+    # Example:
+    # "תל אביב"
+    # "אשדוד"
+    # "חיפה"
+    area_name = Column(String, nullable=False, unique=True, index=True)
+
+    # Last alert ID that opened or extended this area emergency window.
+    #
+    # Prevents polling the same alert from extending the timer repeatedly.
+    last_alert_id = Column(String, nullable=True)
+
+    # Last relevant event type.
+    #
+    # Examples:
+    # - rocket_attack
+    # - hostile_aircraft_intrusion
+    # - prepare_near_shelter
+    last_event_type = Column(String, nullable=True)
+
+    # When the last relevant alert was processed.
+    last_relevant_alert_at = Column(DateTime, nullable=False)
+
+    # When emergency access for this area expires.
+    expires_at = Column(DateTime, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )

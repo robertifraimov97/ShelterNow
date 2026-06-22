@@ -4,6 +4,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from dotenv import load_dotenv
 
+
 # Load environment variables from the .env file.
 load_dotenv()
 

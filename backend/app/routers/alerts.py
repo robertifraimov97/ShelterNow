@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
+from sqlalchemy.orm import Session
+
+from app.db.database import get_db
 
 from app.services.alerts import get_current_alerts
 from app.services.alert_matching import classify_alert_relevance
@@ -9,7 +12,9 @@ from app.services.test_alerts import (
     clear_test_alert,
     get_active_test_alert,
 )
-
+from app.services.emergency_access import (
+    activate_or_extend_emergency_access,
+)
 
 # Create a router for all alert-related endpoints.
 router = APIRouter(prefix="/alerts", tags=["Alerts"])
@@ -19,6 +24,7 @@ def build_alert_response(
     alert_data: dict,
     current_city: str | None,
     followed_areas: list[str],
+    db: Session,
 ) -> dict:
     """
     Build the full alert API response.
@@ -82,6 +88,39 @@ def build_alert_response(
         classification=classification,
     )
 
+    # Emergency access layer:
+    #
+    # If the alert is relevant to the user's current location,
+    # and the experience layer says emergency access should be activated,
+    # we open or extend a backend-controlled emergency-access window
+    # for every affected alert area.
+    #
+    # Important:
+    # This does NOT expose community shelters directly.
+    # It only records that these areas currently have an active
+    # emergency-access window.
+    #
+    # Shelter exposure will later be controlled by a limited recommendation
+    # endpoint that returns only a primary shelter + a few alternatives.
+    if experience.get("should_activate_emergency_access", False):
+        alert_id = raw_alert.get("id")
+        event_type = classification.get("event_type")
+
+        # Only process alerts that have a stable ID.
+        #
+        # This prevents polling the same alert from extending
+        # the emergency-access timer repeatedly.
+        if alert_id:
+            for area_name in affected_areas:
+                activate_or_extend_emergency_access(
+                    db=db,
+                    area_name=area_name,
+                    alert_id=alert_id,
+                    event_type=event_type,
+                )
+
+    # Return the final alert API response with all decision layers included.
+
     # Return the final alert API response with all decision layers included.
     # Frontend can keep using existing relevance fields,
     # but should gradually migrate to classification + experience.
@@ -97,6 +136,7 @@ def build_alert_response(
 def get_alerts(
     current_city: str | None = None,
     followed_areas: list[str] = Query(default=[]),
+    db: Session = Depends(get_db),
 ):
     """
     Main alerts endpoint.
@@ -124,11 +164,14 @@ def get_alerts(
         alert_data=alert_data,
         current_city=current_city,
         followed_areas=followed_areas,
+         db=db,
     )
 
 
 @router.get("/test-relevance")
-def test_relevance():
+def test_relevance(
+    db: Session = Depends(get_db),
+):
     """
     Development endpoint.
 
@@ -162,6 +205,7 @@ def test_relevance():
         alert_data=alert_data,
         current_city="כפר סבא",
         followed_areas=["כפר סבא", "חולון"],
+        db=db,
     )
 
 
