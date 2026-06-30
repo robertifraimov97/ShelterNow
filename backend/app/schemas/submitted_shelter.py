@@ -3,44 +3,54 @@ from datetime import datetime
 from typing import Optional
 
 
-# Base schema that contains the shared fields
-# for user-submitted shelters.
 class SubmittedShelterBase(BaseModel):
-    # Basic shelter details provided by the user.
+    # Basic shelter information.
     name: str
     city: str
     address: Optional[str] = None
 
-    # Optional coordinates that may be added after geocoding.
+    # Coordinates may be added later by the backend geocoding service.
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
-    # Optional submission and accessibility details.
+    # Optional user-provided notes.
     notes: Optional[str] = None
     accessibility_notes: Optional[str] = None
 
-    # Optional information about the person who submitted the shelter.
+    # Optional submitter information.
     submitted_by_name: Optional[str] = None
     submitted_by_email: Optional[str] = None
 
-    # Review workflow fields for tracking the submission state.
+    # Review workflow fields.
     submission_status: str = "pending"
     review_notes: Optional[str] = None
 
 
-# Schema used when creating a new submitted shelter.
-# It inherits all shared fields from SubmittedShelterBase.
 class SubmittedShelterCreate(SubmittedShelterBase):
+    # This model is used when a new submitted shelter is created.
     pass
 
 
-# Schema returned by submitted shelter endpoints.
-# It includes all shared fields plus database-managed metadata.
+class SubmittedShelterUpdate(BaseModel):
+    # Editable fields for updating an existing submitted shelter.
+    name: str
+    city: str
+    address: str
+    notes: Optional[str] = None
+    accessibility_notes: Optional[str] = None
+
+
+class SubmittedShelterReviewAction(BaseModel):
+    # Optional notes written by the reviewer during approval or rejection.
+    review_notes: Optional[str] = None
+
+
 class SubmittedShelterResponse(SubmittedShelterBase):
+    # Database-generated fields returned to the client.
     id: int
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        # Allow creating this response model directly from ORM objects.
+        # Allow returning SQLAlchemy model instances directly.
         from_attributes = True
