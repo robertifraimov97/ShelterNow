@@ -8,34 +8,87 @@ import {
   Pressable,
   TextInput,
   Switch,
+  Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { API_BASE_URL } from '../constants/api';
 
 export default function EditSubmittedShelterScreen() {
-  // Router instance used for navigating back to the previous screen.
+  // Router instance used for navigation.
   const router = useRouter();
 
-  // Local state for the editable shelter form fields.
-  const [shelterName, setShelterName] = useState('Neighborhood Basement Shelter');
-  const [address, setAddress] = useState('12 Herzl St, Tel Aviv');
-  const [notes, setNotes] = useState('Accessible entrance from the side gate.');
-  const [isAccessible, setIsAccessible] = useState(true);
+  // Read the shelter data passed from the previous screen.
+  const params = useLocalSearchParams();
 
-  // Handles saving the edited shelter values.
-  // At the moment this only logs the updated data.
-  const handleSave = () => {
-    console.log('Shelter updated', {
-      shelterName,
-      address,
-      notes,
-      isAccessible,
-    });
+  const shelterId = String(params.id || '');
+  const initialName = String(params.name || '');
+  const initialCity = String(params.city || '');
+  const initialAddress = String(params.address || '');
+  const initialNotes = String(params.notes || '');
+  const initialAccessibilityNotes = String(params.accessibility_notes || '');
+
+  // Initialize local form state from route params.
+  const [shelterName, setShelterName] = useState(initialName);
+  const [city, setCity] = useState(initialCity);
+  const [address, setAddress] = useState(initialAddress);
+  const [notes, setNotes] = useState(initialNotes);
+  const [isAccessible, setIsAccessible] = useState(
+    initialAccessibilityNotes.toLowerCase().includes('accessible')
+  );
+  const [loading, setLoading] = useState(false);
+
+  const handleSave = async () => {
+    // Validate required fields before sending the update.
+    if (!shelterName.trim() || !city.trim() || !address.trim()) {
+      Alert.alert(
+        'Missing information',
+        'Please fill in shelter name, city, and address.'
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Send an update request for the selected submitted shelter.
+      const response = await fetch(
+        `${API_BASE_URL}/submitted-shelters/${shelterId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: shelterName.trim(),
+            city: city.trim(),
+            address: address.trim(),
+            notes: notes.trim() || null,
+            accessibility_notes: isAccessible ? 'Accessible shelter' : null,
+          }),
+        }
+      );
+
+      // Show an error if the backend rejects the update.
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log('Failed to update submitted shelter:', errorText);
+        Alert.alert('Error', 'Failed to update shelter.');
+        return;
+      }
+
+      Alert.alert('Success', 'Shelter updated successfully.');
+      router.back();
+    } catch (error) {
+      console.log('Network error while updating shelter:', error);
+      Alert.alert('Error', 'Something went wrong while updating the shelter.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Header section with back navigation and screen description */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -47,7 +100,6 @@ export default function EditSubmittedShelterScreen() {
           </Text>
         </View>
 
-        {/* Form section for editing the shelter details */}
         <View style={styles.formSection}>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Shelter Name</Text>
@@ -56,6 +108,16 @@ export default function EditSubmittedShelterScreen() {
               value={shelterName}
               onChangeText={setShelterName}
               placeholder="Enter shelter name"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>City</Text>
+            <TextInput
+              style={styles.input}
+              value={city}
+              onChangeText={setCity}
+              placeholder="Enter city"
             />
           </View>
 
@@ -82,7 +144,6 @@ export default function EditSubmittedShelterScreen() {
             />
           </View>
 
-          {/* Accessibility toggle for the shelter */}
           <View style={styles.switchCard}>
             <View style={styles.switchTextContainer}>
               <Text style={styles.switchTitle}>Accessible shelter</Text>
@@ -95,9 +156,26 @@ export default function EditSubmittedShelterScreen() {
           </View>
         </View>
 
-        {/* Save button for submitting the edited shelter data */}
-        <Pressable style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Save Changes</Text>
+        <Pressable
+          style={[
+            styles.saveButton,
+            (loading ||
+              !shelterName.trim() ||
+              !city.trim() ||
+              !address.trim()) &&
+              styles.saveButtonDisabled,
+          ]}
+          onPress={handleSave}
+          disabled={
+            loading ||
+            !shelterName.trim() ||
+            !city.trim() ||
+            !address.trim()
+          }
+        >
+          <Text style={styles.saveButtonText}>
+            {loading ? 'Saving...' : 'Save Changes'}
+          </Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -112,11 +190,11 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 24,
+    paddingBottom: 20,
     gap: 20,
   },
   header: {
-    gap: 8,
+    gap: 6,
   },
   backButton: {
     alignSelf: 'flex-start',
@@ -146,37 +224,37 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   inputLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#0F172A',
   },
   input: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#D1D9E6',
-    paddingHorizontal: 14,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 15,
+    fontSize: 16,
     color: '#0F172A',
   },
   textArea: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#D1D9E6',
-    paddingHorizontal: 14,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 15,
+    minHeight: 120,
+    fontSize: 16,
     color: '#0F172A',
-    minHeight: 110,
   },
   switchCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    borderRadius: 18,
+    padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -184,11 +262,11 @@ const styles = StyleSheet.create({
   },
   switchTextContainer: {
     flex: 1,
-    gap: 4,
+    gap: 6,
   },
   switchTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#0F172A',
   },
   switchSubtitle: {
@@ -197,11 +275,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   saveButton: {
-    marginTop: 4,
     backgroundColor: '#2563EB',
     borderRadius: 16,
     paddingVertical: 16,
     alignItems: 'center',
+    marginTop: 8,
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#94A3B8',
   },
   saveButtonText: {
     color: '#FFFFFF',

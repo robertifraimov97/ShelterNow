@@ -1,9 +1,8 @@
-import { SafeAreaView, View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { SafeAreaView, View, Text, StyleSheet, Pressable, ScrollView, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { API_BASE_URL } from '../constants/api';
 
-// Represents a shelter submitted by a user and returned from the backend.
 type SubmittedShelter = {
   id: number;
   name: string;
@@ -22,20 +21,23 @@ type SubmittedShelter = {
 };
 
 export default function MySubmittedSheltersScreen() {
-  // Router instance used for navigation between screens.
+  // Router instance used for screen navigation.
   const router = useRouter();
 
-  // Stores the submitted shelters loaded from the backend.
+  // Local state for submitted shelters loaded from the backend.
   const [submittedShelters, setSubmittedShelters] = useState<SubmittedShelter[]>([]);
 
-  // Controls the loading state while data is being fetched.
+  // Loading state while the list is being fetched.
   const [loading, setLoading] = useState(true);
 
-  // Loads all submitted shelters from the backend API.
+  // Track which shelter is currently being deleted.
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
   const loadSubmittedShelters = async () => {
     try {
       setLoading(true);
 
+      // Load all submitted shelters from the backend API.
       const response = await fetch(`${API_BASE_URL}/submitted-shelters/`);
       const data = await response.json();
 
@@ -47,24 +49,76 @@ export default function MySubmittedSheltersScreen() {
     }
   };
 
-  // Reload the submitted shelters list whenever the screen comes into focus.
   useFocusEffect(
     useCallback(() => {
+      // Reload the list every time the screen comes into focus.
       loadSubmittedShelters();
     }, [])
   );
 
-  // Converts backend submission status values into user-friendly labels.
   const getStatusLabel = (status: string) => {
+    // Convert backend status values into user-friendly text.
     if (status === 'approved') return 'Approved';
     if (status === 'rejected') return 'Rejected';
     return 'Pending review';
   };
 
+  const handleDeleteShelter = async (shelterId: number) => {
+    try {
+      setDeletingId(shelterId);
+
+      // Send a DELETE request to remove the selected shelter.
+      const response = await fetch(
+        `${API_BASE_URL}/submitted-shelters/${shelterId}`,
+        {
+          method: 'DELETE',
+        }
+      );
+
+      // If the backend returns an error, show feedback and stop.
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log('Failed to delete submitted shelter:', errorText);
+        Alert.alert('Error', 'Failed to delete shelter.');
+        return;
+      }
+
+      // Remove the deleted shelter from the local UI state immediately.
+      setSubmittedShelters((prevShelters) =>
+        prevShelters.filter((shelter) => shelter.id !== shelterId)
+      );
+
+      Alert.alert('Success', 'Shelter deleted successfully.');
+    } catch (error) {
+      console.log('Network error while deleting shelter:', error);
+      Alert.alert('Error', 'Something went wrong while deleting the shelter.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const confirmDeleteShelter = (shelterId: number, shelterName: string) => {
+    // Show a confirmation dialog before deleting the shelter.
+    Alert.alert(
+      'Delete shelter',
+      `Are you sure you want to delete "${shelterName}"?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => handleDeleteShelter(shelterId),
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Header section with back button and screen title */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -76,7 +130,6 @@ export default function MySubmittedSheltersScreen() {
           </Text>
         </View>
 
-        {/* Main list section that handles loading, empty, and populated states */}
         <View style={styles.listSection}>
           {loading ? (
             <Text style={styles.helperText}>Loading submitted shelters...</Text>
@@ -85,32 +138,56 @@ export default function MySubmittedSheltersScreen() {
           ) : (
             submittedShelters.map((shelter) => (
               <View key={shelter.id} style={styles.shelterCard}>
-                {/* Basic shelter details */}
                 <Text style={styles.shelterName}>{shelter.name}</Text>
                 <Text style={styles.shelterInfo}>
                   {shelter.address || shelter.city}
                 </Text>
                 <Text style={styles.shelterInfo}>Community submission</Text>
 
-                {/* Status badge showing the current review state */}
                 <View style={styles.statusBadge}>
                   <Text style={styles.statusBadgeText}>
                     {getStatusLabel(shelter.submission_status)}
                   </Text>
                 </View>
 
-                {/* Action buttons for editing or deleting the shelter */}
+                {/* Show reviewer notes if they exist */}
+                {shelter.review_notes ? (
+                  <Text style={styles.reviewNotes}>
+                    Review notes: {shelter.review_notes}
+                  </Text>
+                ) : null}
+
                 <View style={styles.actionsRow}>
                   <Pressable
                     style={styles.editButton}
-                    onPress={() => router.push('/edit-submitted-shelter')}>
+                    onPress={() =>
+                      router.push({
+                        pathname: '/edit-submitted-shelter',
+                        params: {
+                          id: String(shelter.id),
+                          name: shelter.name,
+                          city: shelter.city,
+                          address: shelter.address || '',
+                          notes: shelter.notes || '',
+                          accessibility_notes: shelter.accessibility_notes || '',
+                        },
+                      })
+                    }>
                     <Text style={styles.editButtonText}>Edit</Text>
                   </Pressable>
 
                   <Pressable
-                    style={styles.deleteButton}
-                    onPress={() => console.log('Delete pressed', shelter.id)}>
-                    <Text style={styles.deleteButtonText}>Delete</Text>
+                    style={[
+                      styles.deleteButton,
+                      deletingId === shelter.id && styles.deleteButtonDisabled,
+                    ]}
+                    onPress={() =>
+                      confirmDeleteShelter(shelter.id, shelter.name)
+                    }
+                    disabled={deletingId === shelter.id}>
+                    <Text style={styles.deleteButtonText}>
+                      {deletingId === shelter.id ? 'Deleting...' : 'Delete'}
+                    </Text>
                   </Pressable>
                 </View>
               </View>
@@ -130,11 +207,11 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 24,
+    paddingBottom: 20,
     gap: 20,
   },
   header: {
-    gap: 8,
+    gap: 6,
   },
   backButton: {
     alignSelf: 'flex-start',
@@ -158,7 +235,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   listSection: {
-    gap: 12,
+    gap: 14,
   },
   helperText: {
     fontSize: 15,
@@ -167,13 +244,13 @@ const styles = StyleSheet.create({
   shelterCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    padding: 18,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     gap: 8,
   },
   shelterName: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
     color: '#0F172A',
   },
@@ -183,42 +260,48 @@ const styles = StyleSheet.create({
   },
   statusBadge: {
     alignSelf: 'flex-start',
-    marginTop: 4,
-    backgroundColor: '#E8F1FB',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    backgroundColor: '#DBEAFE',
     borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
   },
   statusBadgeText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1D4ED8',
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  reviewNotes: {
+    fontSize: 14,
+    color: '#475569',
   },
   actionsRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
     marginTop: 6,
   },
   editButton: {
-    backgroundColor: '#E8F1FB',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    backgroundColor: '#DBEAFE',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 14,
   },
   editButtonText: {
-    color: '#1D4ED8',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
+    color: '#2563EB',
   },
   deleteButton: {
     backgroundColor: '#FEE2E2',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
   },
   deleteButtonText: {
-    color: '#B91C1C',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
+    color: '#DC2626',
   },
 });
