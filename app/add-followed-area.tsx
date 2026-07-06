@@ -11,10 +11,11 @@ import {
 import { useRouter } from 'expo-router';
 import { israeliCities } from '../data/israeli-cities';
 import { API_BASE_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function AddFollowedAreaScreen() {
-  // Router instance used to navigate back after adding an area.
   const router = useRouter();
+  const { token } = useAuth();
 
   // Search text entered by the user.
   const [searchText, setSearchText] = useState('');
@@ -54,9 +55,9 @@ export default function AddFollowedAreaScreen() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          user_identifier: 'robert_local',
           area_name: selectedCity.name,
           city_code: selectedCity.cityCode,
           label: null,

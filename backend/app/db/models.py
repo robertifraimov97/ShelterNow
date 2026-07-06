@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey
 
 from app.db.database import Base
 
@@ -97,8 +97,8 @@ class FollowedArea(Base):
     # Unique database identifier for each followed area entry.
     id = Column(Integer, primary_key=True, index=True)
 
-    # Identifier used to associate followed areas with a specific user.
-    user_identifier = Column(String, nullable=False)
+    # FK to the authenticated user who follows this area.
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
 
     # Name of the area the user wants to follow.
     area_name = Column(String, nullable=False)

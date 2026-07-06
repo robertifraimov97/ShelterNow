@@ -2,11 +2,11 @@ import { SafeAreaView, View, Text, StyleSheet, Pressable, ScrollView } from 'rea
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { API_BASE_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 
 // Represents a followed area record returned from the backend.
 type FollowedArea = {
   id: number;
-  user_identifier: string;
   area_name: string;
   city_code?: string | null;
   label?: string | null;
@@ -14,8 +14,8 @@ type FollowedArea = {
 };
 
 export default function FollowedAreasScreen() {
-  // Router instance used for navigation between screens.
   const router = useRouter();
+  const { token } = useAuth();
 
   // State for all followed areas loaded from the backend.
   const [areas, setAreas] = useState<FollowedArea[]>([]);
@@ -31,10 +31,12 @@ export default function FollowedAreasScreen() {
     try {
       setLoading(true);
 
-      const response = await fetch(`${API_BASE_URL}/followed-areas/`);
+      const response = await fetch(`${API_BASE_URL}/followed-areas/`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await response.json();
 
-      setAreas(data);
+      setAreas(Array.isArray(data) ? data : []);
     } catch (error) {
       console.log('Failed to load followed areas:', error);
     } finally {
@@ -49,6 +51,7 @@ export default function FollowedAreasScreen() {
 
       const response = await fetch(`${API_BASE_URL}/followed-areas/${id}`, {
         method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
       if (!response.ok) {
