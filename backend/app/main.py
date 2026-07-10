@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.routers import shelter_feedback
 from app.db.database import Base, engine
 from app.db import models
 from app.routers import shelters, submitted_shelters, followed_areas, recommendations, routing, alerts, community_shelters, push, emergency_access
@@ -21,6 +22,12 @@ app.include_router(alerts.router)
 app.include_router(community_shelters.router)
 app.include_router(push.router)
 app.include_router(emergency_access.router)
+<<<<<<< Updated upstream
+=======
+app.include_router(users.router)
+app.include_router(auth.router)
+app.include_router(shelter_feedback.router)
+>>>>>>> Stashed changes
 
 
 # Simple root endpoint used to verify that the backend is running.
