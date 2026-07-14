@@ -1,8 +1,18 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey
 
 from app.db.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, unique=True, index=True)
+    password_hash = Column(String, nullable=True)
+    trust_score = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 # Stores official shelter records that come from trusted municipal or external sources.
@@ -87,15 +97,14 @@ class FollowedArea(Base):
     # Unique database identifier for each followed area entry.
     id = Column(Integer, primary_key=True, index=True)
 
-    # Identifier used to associate followed areas with a specific user.
-    user_identifier = Column(String, nullable=False)
+    # FK to the authenticated user who follows this area.
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
 
     # Name of the area the user wants to follow.
     area_name = Column(String, nullable=False)
 
     # Timestamp for when the area was added to the followed list.
     created_at = Column(DateTime, default=datetime.utcnow)
-
 
 
 # Stores community-provided shelters that can be shown during emergency situations.
@@ -189,84 +198,3 @@ class EmergencyAccessState(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
     )
-
-
-class ShelterVisitSession(Base):
-
-    __tablename__ = "shelter_visit_sessions"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # The user who started navigation to the shelter.
-
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-
-    # The shelter the user attempted to reach.
-
-    shelter_id = Column(Integer, nullable=False)
-
-    # Indicates whether the shelter came from the official list or community list.
-
-    shelter_source = Column(String, nullable=False)
-
-    # Timestamp for when the route to the shelter started.
-
-    route_started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    # Tracks whether the user has already been prompted for feedback.
-
-    feedback_prompted = Column(Boolean, default=False, nullable=False)
-
-    # Tracks whether the user has already submitted feedback.
-
-    feedback_submitted = Column(Boolean, default=False, nullable=False)
-
-    # Optional timestamps for analytics/debugging.
-
-    feedback_prompted_at = Column(DateTime, nullable=True)
-
-    feedback_submitted_at = Column(DateTime, nullable=True)
-
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-class ShelterFeedback(Base):
-
-    __tablename__ = "shelter_feedback"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # The user who submitted the feedback.
-
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-
-    # The visit session this feedback belongs to.
-
-    visit_session_id = Column(Integer, ForeignKey("shelter_visit_sessions.id"), nullable=False)
-
-    # Shelter identity is copied here too for easier querying later.
-
-    shelter_id = Column(Integer, nullable=False)
-
-    shelter_source = Column(String, nullable=False)
-
-    # Question 1: Was the shelter open?
-
-    # Allowed values: yes / partial / no
-
-    was_open = Column(String, nullable=False)
-
-    # Question 2: Was the shelter accessible?
-
-    # Allowed values: yes / partial / no / unknown
-
-    was_accessible = Column(String, nullable=False)
-
-    # Question 3: Shelter condition.
-
-    # Allowed values: good / okay / poor
-
-    condition_rating = Column(String, nullable=False)
-
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-

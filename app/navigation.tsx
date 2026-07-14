@@ -1,12 +1,10 @@
-import { SafeAreaView, View, Text, Pressable, Alert } from 'react-native';
+import { SafeAreaView, View, Text, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE_URL } from '../constants/api';
 import { styles } from '../styles/home.styles';
-import { useAuth } from '../context/AuthContext';
-import { createShelterVisitSession } from '../services/shelterFeedback';
 
 // Represents a single coordinate point in the route path.
 type RoutePoint = {
@@ -29,10 +27,6 @@ type WalkingRouteResponse = {
   instructions: RouteInstruction[];
 };
 
-// Controls how close the user must be to the shelter
-// before the feedback button becomes visible.
-const FEEDBACK_DISTANCE_THRESHOLD_METERS = 30;
-
 // Formats distance for UI display.
 function formatDistance(distanceMeters: number) {
   if (distanceMeters < 1000) {
@@ -49,7 +43,7 @@ function formatDuration(durationSeconds: number) {
 }
 
 // Calculates straight-line distance between two coordinates using the Haversine formula.
-// Used both for reroute checks and proximity checks.
+// Used here to decide when the user moved enough to trigger route recalculation.
 function calculateDistanceMeters(
   lat1: number,
   lon1: number,
@@ -77,14 +71,12 @@ function calculateDistanceMeters(
 export default function NavigationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { token } = useAuth();
 
   // Extract shelter data passed through route params.
   const shelterName = String(params.name || '');
   const shelterLatitude = Number(params.latitude);
   const shelterLongitude = Number(params.longitude);
   const shelterSource = String(params.source || 'Official');
-  const shelterId = Number(params.shelterId);
 
   // Determine visual behavior based on whether the destination is a community shelter.
   const isCommunityShelter = shelterSource === 'Community';
@@ -106,9 +98,6 @@ export default function NavigationScreen() {
   const [routeDuration, setRouteDuration] = useState<number | null>(null);
   const [instructions, setInstructions] = useState<RouteInstruction[]>([]);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
-
-  // Tracks whether the feedback button is currently creating/opening a feedback session.
-  const [isOpeningFeedback, setIsOpeningFeedback] = useState(false);
 
   // Ref to control the map programmatically.
   const mapRef = useRef<MapView | null>(null);
@@ -170,54 +159,6 @@ export default function NavigationScreen() {
       setInstructions([]);
     } finally {
       setIsLoadingRoute(false);
-    }
-  };
-
-  // Opens the shelter feedback screen manually.
-  // If the user is logged in, this also creates or reuses a visit session in the backend.
-  const handleOpenShelterFeedback = async () => {
-    if (isOpeningFeedback) {
-      return;
-    }
-
-    if (!shelterId || Number.isNaN(shelterId)) {
-      Alert.alert('Error', 'Shelter information is missing.');
-      return;
-    }
-
-    try {
-      setIsOpeningFeedback(true);
-
-      // Feedback is linked to a visit session only for authenticated users.
-      if (!token) {
-        Alert.alert(
-          'Login required',
-          'Please log in to submit shelter feedback.'
-        );
-        return;
-      }
-
-      const visitSession = await createShelterVisitSession(
-        token,
-        shelterId,
-        shelterSource
-      );
-
-      router.push({
-        pathname: '/shelter-feedback',
-        params: {
-          visitSessionId: String(visitSession.id),
-          shelterName: shelterName || 'Selected Shelter',
-        },
-      });
-    } catch (error: any) {
-      console.log('Failed to open shelter feedback:', error);
-      Alert.alert(
-        'Error',
-        error?.message || 'Failed to open shelter feedback.'
-      );
-    } finally {
-      setIsOpeningFeedback(false);
     }
   };
 
@@ -308,28 +249,14 @@ export default function NavigationScreen() {
   // Show only the first/current instruction in the instruction overlay.
   const currentInstruction = instructions.length > 0 ? instructions[0] : null;
 
-  // Calculate the current straight-line distance from the user to the shelter.
-  const distanceToShelter =
-    userLocation
-      ? calculateDistanceMeters(
-          userLocation.latitude,
-          userLocation.longitude,
-          shelterLatitude,
-          shelterLongitude
-        )
-      : null;
-
-  // Show feedback only when the user is very close to the destination.
-  const shouldShowFeedbackButton =
-    distanceToShelter !== null &&
-    distanceToShelter <= FEEDBACK_DISTANCE_THRESHOLD_METERS;
-
   return (
     <SafeAreaView style={styles.container}>
+      {/* Hide the default Expo Router header for this screen */}
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={[styles.content, { flex: 1 }]}>
         <View style={styles.header}>
+          {/* Back button */}
           <Pressable
             style={{
               alignSelf: 'flex-start',
@@ -349,6 +276,7 @@ export default function NavigationScreen() {
           <Text style={styles.subtitle}>Walk safely to your selected shelter</Text>
         </View>
 
+        {/* Main route summary card */}
         <View style={styles.mainCard}>
           <Text style={styles.cardTitle}>Destination</Text>
           <Text style={styles.cardName}>{shelterName || 'Shelter'}</Text>
@@ -366,49 +294,9 @@ export default function NavigationScreen() {
               ? 'Updating route...'
               : `${destinationTypeLabel} • Live navigation preview`}
           </Text>
-
-          {/* Show the user's live straight-line distance to the shelter */}
-          {distanceToShelter !== null && (
-            <Text
-              style={{
-                marginTop: 10,
-                fontSize: 14,
-                fontWeight: '600',
-                color: '#475569',
-              }}
-            >
-              {`Distance to shelter: ${distanceToShelter}m`}
-            </Text>
-          )}
-
-          {/* Manual feedback button appears only when the user is within 30 meters */}
-          {shouldShowFeedbackButton && (
-            <Pressable
-              style={{
-                marginTop: 14,
-                backgroundColor: '#2563EB',
-                borderRadius: 14,
-                paddingVertical: 14,
-                alignItems: 'center',
-              }}
-              onPress={handleOpenShelterFeedback}
-              disabled={isOpeningFeedback}
-            >
-              <Text
-                style={{
-                  color: '#FFFFFF',
-                  fontSize: 15,
-                  fontWeight: '700',
-                }}
-              >
-                {isOpeningFeedback
-                  ? 'Opening Feedback...'
-                  : 'Report Shelter Experience'}
-              </Text>
-            </Pressable>
-          )}
         </View>
 
+        {/* Map and live navigation section */}
         <View style={[styles.mapSection, { flex: 1 }]}>
           <Text style={styles.mapTitle}>Navigation Map</Text>
 
@@ -426,6 +314,7 @@ export default function NavigationScreen() {
                   }}
                   showsUserLocation={false}
                 >
+                  {/* Marker for user's current location */}
                   <Marker
                     coordinate={{
                       latitude: userLocation.latitude,
@@ -436,6 +325,7 @@ export default function NavigationScreen() {
                     pinColor="red"
                   />
 
+                  {/* Marker for the destination shelter */}
                   <Marker
                     coordinate={{
                       latitude: shelterLatitude,
@@ -446,6 +336,7 @@ export default function NavigationScreen() {
                     pinColor={destinationPinColor}
                   />
 
+                  {/* Route polyline */}
                   {walkingRoute.length > 0 && (
                     <Polyline
                       coordinates={walkingRoute}
@@ -455,6 +346,7 @@ export default function NavigationScreen() {
                   )}
                 </MapView>
 
+                {/* Recenter button */}
                 <Pressable
                   style={{
                     position: 'absolute',
@@ -494,6 +386,7 @@ export default function NavigationScreen() {
                   </Text>
                 </Pressable>
 
+                {/* Overlay card showing the current navigation instruction */}
                 {currentInstruction && (
                   <View
                     style={{
