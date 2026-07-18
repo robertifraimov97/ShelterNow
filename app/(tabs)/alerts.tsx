@@ -4,11 +4,11 @@ import { useCallback, useState } from 'react';
 import * as Location from 'expo-location';
 import { API_BASE_URL } from '../../constants/api';
 import { registerForPushNotificationsAsync } from '../../services/pushNotifications';
+import { useAuth } from '../../context/AuthContext';
 
 // Represents a followed area returned from the backend.
 type FollowedArea = {
   id: number;
-  user_identifier: string;
   area_name: string;
   city_code?: string | null;
   label?: string | null;
@@ -63,6 +63,8 @@ type AlertsResponse = {
 };
 
 export default function AlertsScreen() {
+  const { token } = useAuth();
+
   // State for all followed areas chosen by the user.
   const [followedAreas, setFollowedAreas] = useState<FollowedArea[]>([]);
 
@@ -104,9 +106,12 @@ export default function AlertsScreen() {
     try {
       setLoading(true);
 
-      // Load followed areas from the backend.
-      const followedResponse = await fetch(`${API_BASE_URL}/followed-areas/`);
-      const followedData: FollowedArea[] = await followedResponse.json();
+      // Load followed areas — requires auth token.
+      const followedResponse = await fetch(`${API_BASE_URL}/followed-areas/`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const followedRaw = await followedResponse.json();
+      const followedData: FollowedArea[] = Array.isArray(followedRaw) ? followedRaw : [];
 
       // Detect the user's current city/area.
       const cityName = await getCurrentAreaName();

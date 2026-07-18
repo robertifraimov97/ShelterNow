@@ -3,6 +3,10 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import * as Location from 'expo-location';
 import { API_BASE_URL } from '../constants/api';
+import {
+  getShelterFeedbackSummary,
+  type ShelterFeedbackSummary,
+} from '../services/shelterFeedbackSummary';
 
 // Represents a nearby shelter returned from the recommendation endpoints.
 type NearbyShelter = {
@@ -15,6 +19,11 @@ type NearbyShelter = {
   distance_meters: number;
   estimated_walk_minutes: number;
   source: string;
+};
+
+// Represents a nearby shelter extended with optional feedback summary data.
+type NearbyShelterWithSummary = NearbyShelter & {
+  feedbackSummary?: ShelterFeedbackSummary | null;
 };
 
 // Represents the alerts response used to determine whether emergency mode is active.
@@ -50,7 +59,7 @@ export default function SheltersListScreen() {
   const router = useRouter();
 
   // Stores the nearby shelters loaded from the backend.
-  const [nearbyShelters, setNearbyShelters] = useState<NearbyShelter[]>([]);
+  const [nearbyShelters, setNearbyShelters] = useState<NearbyShelterWithSummary[]>([]);
 
   // Controls the loading state while shelter data is being fetched.
   const [loadingShelters, setLoadingShelters] = useState(true);
@@ -94,6 +103,39 @@ export default function SheltersListScreen() {
       console.log('Failed to load alerts state for shelters list:', error);
       setIsEmergencyMode(false);
     }
+  };
+
+  // Loads the feedback summary for each shelter in parallel.
+  const enrichSheltersWithFeedbackSummary = async (
+    shelters: NearbyShelter[]
+  ): Promise<NearbyShelterWithSummary[]> => {
+    const sheltersWithSummaries = await Promise.all(
+      shelters.map(async (shelter) => {
+        try {
+          const summary = await getShelterFeedbackSummary(
+            shelter.source,
+            shelter.id
+          );
+
+          return {
+            ...shelter,
+            feedbackSummary: summary,
+          };
+        } catch (error) {
+          console.log(
+            `Failed to load feedback summary for shelter ${shelter.id}:`,
+            error
+          );
+
+          return {
+            ...shelter,
+            feedbackSummary: null,
+          };
+        }
+      })
+    );
+
+    return sheltersWithSummaries;
   };
 
   // Loads nearby shelters based on the user's current location
@@ -189,8 +231,10 @@ export default function SheltersListScreen() {
         return;
       }
 
-      const data = await response.json();
-      setNearbyShelters(data);
+      const data: NearbyShelter[] = await response.json();
+      const sheltersWithSummaries = await enrichSheltersWithFeedbackSummary(data);
+
+      setNearbyShelters(sheltersWithSummaries);
     } catch (error) {
       console.log('Failed to load shelters list:', error);
       setNearbyShelters([]);
@@ -207,6 +251,24 @@ export default function SheltersListScreen() {
     }, [])
   );
 
+  // Returns a short community feedback label for the shelter card.
+  const renderCommunityFeedbackText = (summary?: ShelterFeedbackSummary | null) => {
+    if (!summary || summary.total_feedback_count === 0) {
+      return 'Community feedback: No feedback yet';
+    }
+
+    return `Community feedback: ${summary.summary_label}`;
+  };
+
+  // Returns score and reports text for the shelter card.
+  const renderCommunityScoreText = (summary?: ShelterFeedbackSummary | null) => {
+    if (!summary || summary.total_feedback_count === 0) {
+      return null;
+    }
+
+    return `Score: ${summary.reliability_score} • ${summary.total_feedback_count} reports`;
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -218,9 +280,7 @@ export default function SheltersListScreen() {
 
           <Text style={styles.title}>Nearby Shelters</Text>
           <Text style={styles.subtitle}>
-            {isEmergencyMode
-                ? 'EMERGENCY MODE ON'
-                : 'EMERGENCY MODE OFF'}
+            {isEmergencyMode ? 'EMERGENCY MODE ON' : 'EMERGENCY MODE OFF'}
           </Text>
         </View>
 
@@ -245,6 +305,7 @@ export default function SheltersListScreen() {
                       latitude: String(shelter.latitude),
                       longitude: String(shelter.longitude),
                       source: shelter.source,
+                      shelterId: String(shelter.id),
                     },
                   })
                 }
@@ -258,6 +319,17 @@ export default function SheltersListScreen() {
                   {formatDistance(shelter.distance_meters)} • {shelter.estimated_walk_minutes} min walk
                 </Text>
                 <Text style={styles.shelterSource}>Source: {shelter.source}</Text>
+
+                {/* Community feedback summary */}
+                <Text style={styles.communityFeedbackText}>
+                  {renderCommunityFeedbackText(shelter.feedbackSummary)}
+                </Text>
+
+                {renderCommunityScoreText(shelter.feedbackSummary) ? (
+                  <Text style={styles.communityFeedbackMeta}>
+                    {renderCommunityScoreText(shelter.feedbackSummary)}
+                  </Text>
+                ) : null}
               </Pressable>
             ))
           )}
@@ -330,5 +402,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1D4ED8',
     fontWeight: '600',
+  },
+  communityFeedbackText: {
+    fontSize: 14,
+    color: '#0F172A',
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  communityFeedbackMeta: {
+    fontSize: 13,
+    color: '#475569',
   },
 });

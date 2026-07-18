@@ -1,14 +1,50 @@
 import { SafeAreaView, View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../../context/AuthContext';
 
 export default function ProfileScreen() {
-  // Router instance used for navigation to other screens.
   const router = useRouter();
+  const { isAuthenticated, isLoading, logout } = useAuth();
 
+  const handleLogout = async () => {
+    await logout();
+  };
+
+  // ─── Unauthenticated state ──────────────────────────────────────────────────
+  if (!isLoading && !isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Profile</Text>
+            <Text style={styles.subtitle}>
+              Sign in to manage your followed areas and shelter activity
+            </Text>
+          </View>
+
+          <View style={styles.authCard}>
+            <Text style={styles.authCardTitle}>Get personalised alerts</Text>
+            <Text style={styles.authCardBody}>
+              Create an account or sign in to follow areas, receive targeted alerts, and manage your shelter submissions.
+            </Text>
+
+            <Pressable style={styles.primaryButton} onPress={() => router.push('/register')}>
+              <Text style={styles.primaryButtonText}>Create Account</Text>
+            </Pressable>
+
+            <Pressable style={styles.secondaryButton} onPress={() => router.push('/login')}>
+              <Text style={styles.secondaryButtonText}>Sign In</Text>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ─── Authenticated state ────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        {/* Screen header */}
         <View style={styles.header}>
           <Text style={styles.title}>Profile</Text>
           <Text style={styles.subtitle}>
@@ -16,61 +52,50 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
-        {/* Summary card showing the current user preferences */}
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Current Preferences</Text>
-
           <View style={styles.summaryBadgesRow}>
-            {/* Badge showing the current mobility preference */}
             <View style={styles.summaryBadge}>
               <Text style={styles.summaryBadgeText}>Mobility: Regular</Text>
             </View>
-
-            {/* Badge showing whether accessible routing is enabled */}
             <View style={styles.summaryBadge}>
               <Text style={styles.summaryBadgeText}>Accessible Route: Off</Text>
             </View>
           </View>
-
           <Text style={styles.summaryHint}>
             These preferences affect shelter guidance and route suggestions.
           </Text>
         </View>
 
-        {/* Menu section with navigation options */}
         <View style={styles.menuSection}>
-          <Pressable
-            style={styles.menuItem}
-            onPress={() => router.push('/profile-settings')}>
+          <Pressable style={styles.menuItem} onPress={() => router.push('/profile-settings')}>
             <View>
               <Text style={styles.menuTitle}>Settings</Text>
-              <Text style={styles.menuSubtitle}>
-                Adjust mobility and accessibility preferences
-              </Text>
+              <Text style={styles.menuSubtitle}>Adjust mobility and accessibility preferences</Text>
             </View>
             <Text style={styles.menuArrow}>›</Text>
           </Pressable>
 
-          <Pressable
-            style={styles.menuItem}
-            onPress={() => router.push('/shelter-management')}>
+          <Pressable style={styles.menuItem} onPress={() => router.push('/shelter-management')}>
             <View>
               <Text style={styles.menuTitle}>Shelter Management</Text>
-              <Text style={styles.menuSubtitle}>
-                Add shelters and manage your shelter submissions
-              </Text>
+              <Text style={styles.menuSubtitle}>Add shelters and manage your shelter submissions</Text>
             </View>
             <Text style={styles.menuArrow}>›</Text>
           </Pressable>
 
-          <Pressable
-            style={styles.menuItem}
-            onPress={() => router.push('/followed-areas')}>
+          <Pressable style={styles.menuItem} onPress={() => router.push('/followed-areas')}>
             <View>
               <Text style={styles.menuTitle}>Followed Areas</Text>
-              <Text style={styles.menuSubtitle}>
-                Manage the areas you want to monitor
-              </Text>
+              <Text style={styles.menuSubtitle}>Manage the areas you want to monitor</Text>
+            </View>
+            <Text style={styles.menuArrow}>›</Text>
+          </Pressable>
+
+          <Pressable style={[styles.menuItem, styles.menuItemDanger]} onPress={handleLogout}>
+            <View>
+              <Text style={styles.menuTitleDanger}>Sign Out</Text>
+              <Text style={styles.menuSubtitle}>Sign out of your account</Text>
             </View>
             <Text style={styles.menuArrow}>›</Text>
           </Pressable>
@@ -91,9 +116,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     gap: 20,
   },
-  header: {
-    gap: 6,
-  },
+  header: { gap: 6 },
   title: {
     fontSize: 28,
     fontWeight: '700',
@@ -103,43 +126,87 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#64748B',
   },
-    summaryCard: {
-      backgroundColor: '#F8FBFF',
-      borderRadius: 18,
-      padding: 18,
-      borderWidth: 1,
-      borderColor: '#D9E6F2',
-      gap: 10,
-    },
-    summaryTitle: {
-      fontSize: 18,
-      fontWeight: '700',
-      color: '#0F172A',
-    },
-    summaryBadgesRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 10,
-    },
-    summaryBadge: {
-      backgroundColor: '#E8F1FB',
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      borderRadius: 999,
-    },
-    summaryBadgeText: {
-      fontSize: 14,
-      fontWeight: '600',
-      color: '#1D4ED8',
-    },
-    summaryHint: {
-      fontSize: 13,
-      color: '#64748B',
-      lineHeight: 18,
-    },
-  menuSection: {
-    gap: 12,
+
+  // ─── Auth CTA card ──────────────────────────────────────────────────────────
+  authCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 14,
   },
+  authCardTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  authCardBody: {
+    fontSize: 15,
+    color: '#64748B',
+    lineHeight: 22,
+  },
+  primaryButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  secondaryButton: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  secondaryButtonText: {
+    color: '#0F172A',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // ─── Authenticated menu ─────────────────────────────────────────────────────
+  summaryCard: {
+    backgroundColor: '#F8FBFF',
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#D9E6F2',
+    gap: 10,
+  },
+  summaryTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  summaryBadgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  summaryBadge: {
+    backgroundColor: '#E8F1FB',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+  },
+  summaryBadgeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1D4ED8',
+  },
+  summaryHint: {
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
+  },
+  menuSection: { gap: 12 },
   menuItem: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -150,10 +217,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  menuItemDanger: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FFF8F8',
+  },
   menuTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#0F172A',
+    marginBottom: 4,
+  },
+  menuTitleDanger: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#DC2626',
     marginBottom: 4,
   },
   menuSubtitle: {
