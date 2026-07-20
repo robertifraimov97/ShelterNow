@@ -1,14 +1,84 @@
 import { SafeAreaView, View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import {
+  getShelterFeedbackSummary,
+  type ShelterFeedbackSummary,
+} from '../services/shelterFeedbackSummary';
 
 export default function ShelterDetailsScreen() {
-  // Router instance used to navigate back to the previous screen.
   const router = useRouter();
+  const params = useLocalSearchParams();
+
+  // Read shelter details from route params.
+  const shelterId = Number(params.shelterId);
+  const shelterName = String(params.name || 'Shelter');
+  const shelterAddress = String(params.address || '');
+  const shelterSource = String(params.source || 'official');
+  const shelterDistance = String(params.distance || '');
+  const shelterAccessibility = String(
+    params.accessibility || 'No accessibility data'
+  );
+  const shelterNotes = String(
+    params.notes || 'No additional notes available.'
+  );
+
+  // Local state for the feedback summary section.
+  const [summary, setSummary] = useState<ShelterFeedbackSummary | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(true);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadSummary = async () => {
+      if (!shelterId || Number.isNaN(shelterId)) {
+        setLoadingSummary(false);
+        return;
+      }
+
+      try {
+        setLoadingSummary(true);
+        setSummaryError(null);
+
+        const data = await getShelterFeedbackSummary(shelterSource, shelterId);
+        setSummary(data);
+      } catch (error: any) {
+        console.log('Failed to load shelter feedback summary:', error);
+        setSummaryError('Failed to load community feedback.');
+      } finally {
+        setLoadingSummary(false);
+      }
+    };
+
+    loadSummary();
+  }, [shelterId, shelterSource]);
+
+  const renderOpenSummary = () => {
+    if (!summary || summary.total_feedback_count === 0) {
+      return 'No user reports yet';
+    }
+
+    return `Reported open by ${summary.open_yes_count} of ${summary.total_feedback_count} users`;
+  };
+
+  const renderAccessibilitySummary = () => {
+    if (!summary || summary.total_feedback_count === 0) {
+      return 'No accessibility reports yet';
+    }
+
+    if (summary.accessible_no_count > 0) {
+      return 'Accessibility issues reported';
+    }
+
+    if (summary.accessible_yes_count > 0) {
+      return 'Accessibility reported by users';
+    }
+
+    return 'Mixed accessibility feedback';
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Header section with back button and screen description */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -20,38 +90,62 @@ export default function ShelterDetailsScreen() {
           </Text>
         </View>
 
-        {/* Main summary card for the selected shelter */}
         <View style={styles.mainCard}>
-          <Text style={styles.shelterName}>City Mall Shelter</Text>
-          <Text style={styles.shelterMeta}>400m away • Official source</Text>
+          <Text style={styles.shelterName}>{shelterName}</Text>
+          <Text style={styles.shelterMeta}>
+            {shelterDistance ? `${shelterDistance} • ` : ''}
+            {shelterSource} source
+          </Text>
+
+          {!!shelterAddress && (
+            <Text style={styles.shelterAddress}>{shelterAddress}</Text>
+          )}
         </View>
 
-        {/* Information cards with shelter details */}
         <View style={styles.infoSection}>
           <View style={styles.infoCard}>
             <Text style={styles.infoLabel}>Accessibility</Text>
-            <Text style={styles.infoValue}>Accessible entrance available</Text>
-          </View>
-
-          <View style={styles.infoCard}>
-            <Text style={styles.infoLabel}>Status</Text>
-            <Text style={styles.infoValue}>Available in current prototype data</Text>
+            <Text style={styles.infoValue}>{shelterAccessibility}</Text>
           </View>
 
           <View style={styles.infoCard}>
             <Text style={styles.infoLabel}>Notes</Text>
-            <Text style={styles.infoValue}>
-              Public shelter located near the main shopping area. Suitable for quick access on foot.
-            </Text>
+            <Text style={styles.infoValue}>{shelterNotes}</Text>
+          </View>
+
+          <View style={styles.infoCard}>
+            <Text style={styles.infoLabel}>Community Feedback</Text>
+
+            {loadingSummary ? (
+              <Text style={styles.infoValue}>Loading feedback summary...</Text>
+            ) : summaryError ? (
+              <Text style={styles.infoValue}>{summaryError}</Text>
+            ) : summary ? (
+              <>
+                <Text style={styles.infoValue}>{summary.summary_label}</Text>
+                <Text style={styles.secondaryText}>
+                  Reliability score: {summary.reliability_score}
+                </Text>
+                <Text style={styles.secondaryText}>
+                  {summary.total_feedback_count} reports
+                </Text>
+                <Text style={styles.secondaryText}>{renderOpenSummary()}</Text>
+                <Text style={styles.secondaryText}>
+                  {renderAccessibilitySummary()}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.infoValue}>No feedback available</Text>
+            )}
           </View>
         </View>
 
-        {/* Main action button for starting navigation to the shelter */}
         <View style={styles.goButtonWrapper}>
           <View style={styles.emergencyButtonHalo}>
             <Pressable
               style={styles.emergencyButton}
-              onPress={() => console.log('Start route pressed')}>
+              onPress={() => console.log('Start route pressed')}
+            >
               <Text style={styles.emergencyButtonText}>Start</Text>
               <Text style={styles.emergencyButtonText}>Route</Text>
             </Pressable>
@@ -71,10 +165,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 24,
-    gap: 20,
   },
   header: {
-    gap: 8,
+    marginBottom: 18,
   },
   backButton: {
     alignSelf: 'flex-start',
@@ -82,6 +175,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 12,
     backgroundColor: '#E2E8F0',
+    marginBottom: 12,
   },
   backButtonText: {
     fontSize: 14,
@@ -89,84 +183,89 @@ const styles = StyleSheet.create({
     color: '#0F172A',
   },
   title: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '700',
     color: '#0F172A',
   },
   subtitle: {
     fontSize: 15,
     color: '#64748B',
+    marginTop: 6,
   },
   mainCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 20,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    gap: 8,
+    marginBottom: 18,
   },
   shelterName: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1E3A8A',
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   shelterMeta: {
+    fontSize: 16,
+    color: '#64748B',
+    marginTop: 8,
+  },
+  shelterAddress: {
     fontSize: 15,
     color: '#475569',
+    marginTop: 8,
   },
   infoSection: {
-    gap: 12,
+    gap: 14,
   },
   infoCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    padding: 16,
+    padding: 18,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    gap: 6,
   },
   infoLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
-    color: '#0F172A',
+    color: '#64748B',
+    marginBottom: 8,
   },
   infoValue: {
-    fontSize: 15,
-    color: '#475569',
-    lineHeight: 22,
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#0F172A',
+    lineHeight: 24,
   },
-    goButtonWrapper: {
-      alignItems: 'center',
-      marginTop: 12,
-    },
-    emergencyButtonHalo: {
-      width: 132,
-      height: 132,
-      borderRadius: 66,
-      backgroundColor: 'rgba(52, 168, 83, 0.14)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    emergencyButton: {
-      width: 104,
-      height: 104,
-      borderRadius: 52,
-      backgroundColor: '#34A853',
-      alignItems: 'center',
-      justifyContent: 'center',
-      shadowColor: '#000',
-      shadowOpacity: 0.12,
-      shadowRadius: 10,
-      shadowOffset: {
-        width: 0,
-        height: 4,
-      },
-      elevation: 5,
-    },
-    emergencyButtonText: {
-      color: '#FFFFFF',
-      fontSize: 18,
-      fontWeight: '800',
-      lineHeight: 22,
-    },
+  secondaryText: {
+    fontSize: 14,
+    color: '#475569',
+    marginTop: 6,
+  },
+  goButtonWrapper: {
+    marginTop: 28,
+    alignItems: 'center',
+  },
+  emergencyButtonHalo: {
+    width: 134,
+    height: 134,
+    borderRadius: 67,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(37, 99, 235, 0.12)',
+  },
+  emergencyButton: {
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    backgroundColor: '#2563EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emergencyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 28,
+  },
 });

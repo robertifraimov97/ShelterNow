@@ -5,6 +5,8 @@ import * as Location from 'expo-location';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { styles } from '../../styles/home.styles';
 import { API_BASE_URL } from '../../constants/api';
+import { useAuth } from '../../context/AuthContext';
+import { createShelterVisitSession } from '../../services/shelterFeedback';
 
 // Represents an official shelter object returned from the backend.
 type OfficialShelter = {
@@ -81,6 +83,7 @@ function formatDistance(distanceMeters: number) {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { token } = useAuth();
 
   // Stores the user's current GPS location.
   const [userLocation, setUserLocation] = useState<{
@@ -108,6 +111,9 @@ export default function HomeScreen() {
 
   // Tracks whether the best shelter data is currently loading.
   const [loadingBestShelter, setLoadingBestShelter] = useState(true);
+
+  // Tracks whether route start is currently being prepared.
+  const [startingRoute, setStartingRoute] = useState(false);
 
   // Reference to the map, used for animating back to the user's location.
   const mapRef = useRef<MapView | null>(null);
@@ -298,6 +304,42 @@ export default function HomeScreen() {
     }
   };
 
+  // Creates a visit session for authenticated users and opens navigation.
+  const handleStartRoute = async () => {
+    if (!bestShelter || startingRoute) {
+      return;
+    }
+
+    try {
+      setStartingRoute(true);
+
+      // Create a visit session only for logged-in users.
+      // Navigation itself should still work even without authentication.
+      if (token) {
+        await createShelterVisitSession(
+          token,
+          bestShelter.id,
+          bestShelter.source
+        );
+      }
+    } catch (error) {
+      console.log('Failed to create shelter visit session:', error);
+    } finally {
+      setStartingRoute(false);
+    }
+
+    router.push({
+      pathname: '/navigation',
+      params: {
+        name: bestShelter.name,
+        latitude: String(bestShelter.latitude),
+        longitude: String(bestShelter.longitude),
+        source: bestShelter.source,
+        shelterId: String(bestShelter.id),
+      },
+    });
+  };
+
   // Initial screen data load when the component mounts.
   useEffect(() => {
     loadHomeScreenData();
@@ -381,24 +423,15 @@ export default function HomeScreen() {
             <View style={styles.emergencyButtonHalo}>
               <Pressable
                 style={styles.emergencyButton}
-                onPress={() => {
-                  if (!bestShelter) {
-                    return;
-                  }
-
-                  router.push({
-                    pathname: '/navigation',
-                    params: {
-                      name: bestShelter.name,
-                      latitude: String(bestShelter.latitude),
-                      longitude: String(bestShelter.longitude),
-                      source: bestShelter.source,
-                    },
-                  });
-                }}
+                onPress={handleStartRoute}
+                disabled={!bestShelter || startingRoute}
               >
-                <Text style={styles.emergencyButtonText}>Start</Text>
-                <Text style={styles.emergencyButtonText}>Route</Text>
+                <Text style={styles.emergencyButtonText}>
+                  {startingRoute ? 'Starting' : 'Start'}
+                </Text>
+                <Text style={styles.emergencyButtonText}>
+                  {startingRoute ? 'Route...' : 'Route'}
+                </Text>
               </Pressable>
             </View>
           </View>
