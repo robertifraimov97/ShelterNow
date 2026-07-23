@@ -1,14 +1,47 @@
-import { SafeAreaView, View, Text, StyleSheet, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { SafeAreaView, View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
+import { useCallback, useState } from 'react';
+import { getUserPreferences } from '../../services/userPreferences';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { isAuthenticated, isLoading, logout } = useAuth();
+  const { isAuthenticated, isLoading, logout, token } = useAuth();
+
+  const [loadingPreferences, setLoadingPreferences] = useState(false);
+  const [mobilityStatus, setMobilityStatus] = useState<'regular' | 'limited'>('regular');
+  const [preferAccessibleRoute, setPreferAccessibleRoute] = useState(false);
 
   const handleLogout = async () => {
     await logout();
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      const loadPreferences = async () => {
+        if (!token || !isAuthenticated) {
+          return;
+        }
+
+        try {
+          setLoadingPreferences(true);
+
+          const preferences = await getUserPreferences(token);
+
+          setMobilityStatus(
+            preferences.mobility_status === 'limited' ? 'limited' : 'regular'
+          );
+          setPreferAccessibleRoute(preferences.prefer_accessible_route);
+        } catch (error) {
+          console.log('Failed to load profile preferences:', error);
+        } finally {
+          setLoadingPreferences(false);
+        }
+      };
+
+      loadPreferences();
+    }, [token, isAuthenticated])
+  );
 
   // ─── Unauthenticated state ──────────────────────────────────────────────────
   if (!isLoading && !isAuthenticated) {
@@ -41,6 +74,13 @@ export default function ProfileScreen() {
     );
   }
 
+  const mobilityLabel =
+    mobilityStatus === 'limited' ? 'Mobility: Limited' : 'Mobility: Regular';
+
+  const accessibleRouteLabel = preferAccessibleRoute
+    ? 'Accessible Route: On'
+    : 'Accessible Route: Off';
+
   // ─── Authenticated state ────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
@@ -54,14 +94,23 @@ export default function ProfileScreen() {
 
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Current Preferences</Text>
-          <View style={styles.summaryBadgesRow}>
-            <View style={styles.summaryBadge}>
-              <Text style={styles.summaryBadgeText}>Mobility: Regular</Text>
+
+          {loadingPreferences ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text style={styles.loadingText}>Loading preferences...</Text>
             </View>
-            <View style={styles.summaryBadge}>
-              <Text style={styles.summaryBadgeText}>Accessible Route: Off</Text>
+          ) : (
+            <View style={styles.summaryBadgesRow}>
+              <View style={styles.summaryBadge}>
+                <Text style={styles.summaryBadgeText}>{mobilityLabel}</Text>
+              </View>
+              <View style={styles.summaryBadge}>
+                <Text style={styles.summaryBadgeText}>{accessibleRouteLabel}</Text>
+              </View>
             </View>
-          </View>
+          )}
+
           <Text style={styles.summaryHint}>
             These preferences affect shelter guidance and route suggestions.
           </Text>
@@ -127,7 +176,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
 
-  // ─── Auth CTA card ──────────────────────────────────────────────────────────
   authCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -171,7 +219,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ─── Authenticated menu ─────────────────────────────────────────────────────
   summaryCard: {
     backgroundColor: '#F8FBFF',
     borderRadius: 18,
@@ -205,6 +252,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748B',
     lineHeight: 18,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#64748B',
   },
   menuSection: { gap: 12 },
   menuItem: {

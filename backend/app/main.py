@@ -2,7 +2,20 @@ from fastapi import FastAPI
 
 from app.db.database import Base, engine
 from app.db import models
-from app.routers import shelters, submitted_shelters, followed_areas, recommendations, routing, alerts, community_shelters, push, emergency_access, users, auth
+from app.routers import (
+    shelters,
+    submitted_shelters,
+    followed_areas,
+    recommendations,
+    routing,
+    alerts,
+    community_shelters,
+    push,
+    emergency_access,
+    users,
+    auth,
+    shelter_feedback,
+)
 
 # Create all database tables based on the SQLAlchemy models
 # if they do not already exist.
@@ -23,6 +36,7 @@ app.include_router(push.router)
 app.include_router(emergency_access.router)
 app.include_router(users.router)
 app.include_router(auth.router)
+app.include_router(shelter_feedback.router)
 
 
 # Simple root endpoint used to verify that the backend is running.

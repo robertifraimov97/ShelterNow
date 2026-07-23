@@ -1,12 +1,15 @@
-import { SafeAreaView, View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { SafeAreaView, View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import * as Location from 'expo-location';
 import { API_BASE_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 import {
   getShelterFeedbackSummary,
   type ShelterFeedbackSummary,
 } from '../services/shelterFeedbackSummary';
+import { getUserPreferences, type UserPreferences } from '../services/userPreferences';
+import { createShelterVisitSession } from '../services/shelterFeedback';
 
 // Represents a nearby shelter returned from the recommendation endpoints.
 type NearbyShelter = {
@@ -19,6 +22,7 @@ type NearbyShelter = {
   distance_meters: number;
   estimated_walk_minutes: number;
   source: string;
+  accessibility_notes?: string | null;
 };
 
 // Represents a nearby shelter extended with optional feedback summary data.
@@ -45,6 +49,8 @@ type AlertsResponse = {
   };
 };
 
+type AccessibilityStatus = 'accessible' | 'unclear' | 'possibly_not_accessible';
+
 // Formats distance for user-friendly display in the shelters list.
 function formatDistance(distanceMeters: number) {
   if (distanceMeters < 1000) {
@@ -55,8 +61,8 @@ function formatDistance(distanceMeters: number) {
 }
 
 export default function SheltersListScreen() {
-  // Router instance used for navigating back and opening navigation screen.
   const router = useRouter();
+  const { token, isAuthenticated } = useAuth();
 
   // Stores the nearby shelters loaded from the backend.
   const [nearbyShelters, setNearbyShelters] = useState<NearbyShelterWithSummary[]>([]);
@@ -69,6 +75,24 @@ export default function SheltersListScreen() {
 
   // Indicates whether the current location is in emergency mode.
   const [isEmergencyMode, setIsEmergencyMode] = useState(false);
+
+  // Stores current user preferences when available.
+  const [userPreferences, setUserPreferences] = useState<UserPreferences | null>(null);
+
+  const loadUserPreferences = async () => {
+    if (!token || !isAuthenticated) {
+      setUserPreferences(null);
+      return;
+    }
+
+    try {
+      const preferences = await getUserPreferences(token);
+      setUserPreferences(preferences);
+    } catch (error) {
+      console.log('Failed to load user preferences for shelters list:', error);
+      setUserPreferences(null);
+    }
+  };
 
   // Loads alert state for the current city and updates emergency mode accordingly.
   const loadAlertsState = async (cityName: string | null) => {
@@ -88,8 +112,6 @@ export default function SheltersListScreen() {
 
       const data: AlertsResponse = await response.json();
 
-      // Decide whether the app should use the emergency shelter flow
-      // based on relevance and experience fields returned by the alerts API.
       const shouldUseEmergencyShelterFlow =
         data.relevance.current_location_match ||
         data.relevance.show_nearest_shelter_button ||
@@ -138,6 +160,136 @@ export default function SheltersListScreen() {
     return sheltersWithSummaries;
   };
 
+  const getAccessibilityStatus = (
+    shelter: NearbyShelterWithSummary
+  ): AccessibilityStatus => {
+    const notes = shelter.accessibility_notes?.toLowerCase() || '';
+    const summary = shelter.feedbackSummary;
+
+    const hasPositiveNotes =
+      notes.includes('accessible') ||
+      notes.includes('נגיש');
+
+    const hasNegativeNotes =
+      notes.includes('not accessible') ||
+      notes.includes('לא נגיש');
+
+    if (hasNegativeNotes) {
+      return 'possibly_not_accessible';
+    }
+
+    if (hasPositiveNotes) {
+      return 'accessible';
+    }
+
+    if (!summary || summary.total_feedback_count === 0) {
+      return 'unclear';
+    }
+
+    if (summary.accessible_no_count > summary.accessible_yes_count) {
+      return 'possibly_not_accessible';
+    }
+
+    if (
+      summary.accessible_yes_count > 0 &&
+      summary.accessible_yes_count >= summary.accessible_no_count
+    ) {
+      return 'accessible';
+    }
+
+    if (summary.accessible_partial_count > 0 || summary.accessible_unknown_count > 0) {
+      return 'unclear';
+    }
+
+    return 'unclear';
+  };
+
+  const shouldWarnBeforeNavigation = () => {
+    return Boolean(
+      userPreferences &&
+        (
+          userPreferences.mobility_status === 'limited' ||
+          userPreferences.prefer_accessible_route
+        )
+    );
+  };
+
+  const openNavigation = async (shelter: NearbyShelterWithSummary) => {
+    let visitSessionId: number | null = null;
+
+    try {
+      if (token) {
+        const visitSession = await createShelterVisitSession(
+          token,
+          shelter.id,
+          shelter.source
+        );
+
+        visitSessionId = visitSession.id;
+      }
+    } catch (error) {
+      console.log('Failed to create shelter visit session from shelters list:', error);
+    }
+
+    router.push({
+      pathname: '/navigation',
+      params: {
+        name: shelter.name,
+        latitude: String(shelter.latitude),
+        longitude: String(shelter.longitude),
+        source: shelter.source,
+        shelterId: String(shelter.id),
+        visitSessionId: visitSessionId ? String(visitSessionId) : '',
+      },
+    });
+  };
+
+  const handleShelterPress = async (shelter: NearbyShelterWithSummary) => {
+    const accessibilityStatus = getAccessibilityStatus(shelter);
+
+    if (
+      shouldWarnBeforeNavigation() &&
+      accessibilityStatus !== 'accessible'
+    ) {
+      const message =
+        accessibilityStatus === 'possibly_not_accessible'
+          ? 'This shelter may not be fully accessible. Please take this into account before starting navigation.'
+          : 'Accessibility information for this shelter is limited. Please take this into account before starting navigation.';
+
+      Alert.alert(
+        'Accessibility notice',
+        message,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: () => {
+              openNavigation(shelter);
+            },
+          },
+        ]
+      );
+
+      return;
+    }
+
+    await openNavigation(shelter);
+  };
+
+  const getAccessibilityLabel = (shelter: NearbyShelterWithSummary) => {
+    const accessibilityStatus = getAccessibilityStatus(shelter);
+
+    if (accessibilityStatus === 'accessible') {
+      return 'Accessibility: Likely accessible';
+    }
+
+    if (accessibilityStatus === 'possibly_not_accessible') {
+      return 'Accessibility: Possible issues reported';
+    }
+
+    return 'Accessibility: Information unclear';
+  };
+
   // Loads nearby shelters based on the user's current location
   // and switches between normal and emergency recommendation endpoints if needed.
   const loadNearbyShelters = async () => {
@@ -145,7 +297,8 @@ export default function SheltersListScreen() {
       setLoadingShelters(true);
       setLocationError('');
 
-      // Ask for foreground location permission before accessing user location.
+      await loadUserPreferences();
+
       const { status } = await Location.requestForegroundPermissionsAsync();
 
       if (status !== 'granted') {
@@ -154,13 +307,11 @@ export default function SheltersListScreen() {
         return;
       }
 
-      // Get the user's current GPS location.
       const location = await Location.getCurrentPositionAsync({});
 
       let cityName: string | null = null;
 
       try {
-        // Reverse geocode the coordinates into a city/subregion/region name.
         const reverseGeocoded = await Location.reverseGeocodeAsync({
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
@@ -174,7 +325,6 @@ export default function SheltersListScreen() {
         console.log('Failed to reverse geocode current city for shelters list:', error);
       }
 
-      // Load alert-based emergency state for the resolved city.
       await loadAlertsState(cityName);
 
       const alertsParams = new URLSearchParams();
@@ -185,7 +335,6 @@ export default function SheltersListScreen() {
       let useEmergencyMode = false;
 
       try {
-        // Fetch alerts again to confirm whether emergency shelter flow should be used.
         const alertsResponse = await fetch(`${API_BASE_URL}/alerts/?${alertsParams.toString()}`);
 
         if (alertsResponse.ok) {
@@ -208,12 +357,10 @@ export default function SheltersListScreen() {
         setIsEmergencyMode(false);
       }
 
-      // Choose the appropriate nearby shelters endpoint depending on emergency state.
       const endpoint = useEmergencyMode
         ? `${API_BASE_URL}/recommendations/nearby-emergency-shelters`
         : `${API_BASE_URL}/recommendations/nearby-shelters`;
 
-      // Request ranked nearby shelters from the backend.
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -244,14 +391,12 @@ export default function SheltersListScreen() {
     }
   };
 
-  // Reload the nearby shelters every time the screen becomes focused.
   useFocusEffect(
     useCallback(() => {
       loadNearbyShelters();
     }, [])
   );
 
-  // Returns a short community feedback label for the shelter card.
   const renderCommunityFeedbackText = (summary?: ShelterFeedbackSummary | null) => {
     if (!summary || summary.total_feedback_count === 0) {
       return 'Community feedback: No feedback yet';
@@ -260,7 +405,6 @@ export default function SheltersListScreen() {
     return `Community feedback: ${summary.summary_label}`;
   };
 
-  // Returns score and reports text for the shelter card.
   const renderCommunityScoreText = (summary?: ShelterFeedbackSummary | null) => {
     if (!summary || summary.total_feedback_count === 0) {
       return null;
@@ -272,7 +416,6 @@ export default function SheltersListScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Header section with back button and emergency mode indicator */}
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Back</Text>
@@ -284,7 +427,6 @@ export default function SheltersListScreen() {
           </Text>
         </View>
 
-        {/* Main shelters list section with loading, error, empty, and content states */}
         <View style={styles.listSection}>
           {loadingShelters ? (
             <Text style={styles.helperText}>Loading shelters...</Text>
@@ -297,20 +439,8 @@ export default function SheltersListScreen() {
               <Pressable
                 key={`${shelter.source}-${shelter.id}`}
                 style={styles.shelterCard}
-                onPress={() =>
-                  router.push({
-                    pathname: '/navigation',
-                    params: {
-                      name: shelter.name,
-                      latitude: String(shelter.latitude),
-                      longitude: String(shelter.longitude),
-                      source: shelter.source,
-                      shelterId: String(shelter.id),
-                    },
-                  })
-                }
+                onPress={() => handleShelterPress(shelter)}
               >
-                {/* Shelter basic info */}
                 <Text style={styles.shelterName}>{shelter.name}</Text>
                 <Text style={styles.shelterInfo}>
                   {shelter.address || shelter.city}
@@ -320,7 +450,6 @@ export default function SheltersListScreen() {
                 </Text>
                 <Text style={styles.shelterSource}>Source: {shelter.source}</Text>
 
-                {/* Community feedback summary */}
                 <Text style={styles.communityFeedbackText}>
                   {renderCommunityFeedbackText(shelter.feedbackSummary)}
                 </Text>
@@ -330,6 +459,10 @@ export default function SheltersListScreen() {
                     {renderCommunityScoreText(shelter.feedbackSummary)}
                   </Text>
                 ) : null}
+
+                <Text style={styles.communityFeedbackMeta}>
+                  {getAccessibilityLabel(shelter)}
+                </Text>
               </Pressable>
             ))
           )}
