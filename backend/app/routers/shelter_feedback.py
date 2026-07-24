@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from sqlalchemy import func
 
 from app.schemas.shelter_feedback_summary import ShelterFeedbackSummaryResponse
 
@@ -171,6 +170,10 @@ def get_shelter_feedback_summary(
             open_yes_count=0,
             open_partial_count=0,
             open_no_count=0,
+            recent_open_yes_count=0,
+            recent_open_partial_count=0,
+            recent_open_no_count=0,
+            last_feedback_at=None,
             accessible_yes_count=0,
             accessible_partial_count=0,
             accessible_no_count=0,
@@ -182,45 +185,99 @@ def get_shelter_feedback_summary(
             summary_label="No feedback yet",
         )
 
-    open_yes_count = sum(1 for item in feedback_items if item.was_open == "yes")
-    open_partial_count = sum(1 for item in feedback_items if item.was_open == "partial")
-    open_no_count = sum(1 for item in feedback_items if item.was_open == "no")
+    # Count all historical openness feedback.
+    open_yes_count = sum(
+        1 for item in feedback_items if item.was_open == "yes"
+    )
+    open_partial_count = sum(
+        1 for item in feedback_items if item.was_open == "partial"
+    )
+    open_no_count = sum(
+        1 for item in feedback_items if item.was_open == "no"
+    )
 
-    accessible_yes_count = sum(1 for item in feedback_items if item.was_accessible == "yes")
-    accessible_partial_count = sum(1 for item in feedback_items if item.was_accessible == "partial")
-    accessible_no_count = sum(1 for item in feedback_items if item.was_accessible == "no")
-    accessible_unknown_count = sum(1 for item in feedback_items if item.was_accessible == "unknown")
+    # Open status can change quickly, so recommendation logic should use
+    # feedback submitted during the last 24 hours.
+    recent_feedback_threshold = datetime.utcnow() - timedelta(hours=24)
 
-    condition_good_count = sum(1 for item in feedback_items if item.condition_rating == "good")
-    condition_okay_count = sum(1 for item in feedback_items if item.condition_rating == "okay")
-    condition_poor_count = sum(1 for item in feedback_items if item.condition_rating == "poor")
+    recent_feedback_items = [
+        item
+        for item in feedback_items
+        if item.created_at and item.created_at >= recent_feedback_threshold
+    ]
+
+    recent_open_yes_count = sum(
+        1 for item in recent_feedback_items if item.was_open == "yes"
+    )
+    recent_open_partial_count = sum(
+        1 for item in recent_feedback_items if item.was_open == "partial"
+    )
+    recent_open_no_count = sum(
+        1 for item in recent_feedback_items if item.was_open == "no"
+    )
+
+    # Store the newest feedback timestamp so the frontend can show
+    # how fresh the available information is.
+    last_feedback_at = max(
+        item.created_at
+        for item in feedback_items
+        if item.created_at is not None
+    )
+
+    accessible_yes_count = sum(
+        1 for item in feedback_items if item.was_accessible == "yes"
+    )
+    accessible_partial_count = sum(
+        1 for item in feedback_items if item.was_accessible == "partial"
+    )
+    accessible_no_count = sum(
+        1 for item in feedback_items if item.was_accessible == "no"
+    )
+    accessible_unknown_count = sum(
+        1 for item in feedback_items if item.was_accessible == "unknown"
+    )
+
+    condition_good_count = sum(
+        1 for item in feedback_items if item.condition_rating == "good"
+    )
+    condition_okay_count = sum(
+        1 for item in feedback_items if item.condition_rating == "okay"
+    )
+    condition_poor_count = sum(
+        1 for item in feedback_items if item.condition_rating == "poor"
+    )
 
     # Simple weighted scoring model:
     # - openness has the highest impact
     # - accessibility has medium impact
     # - condition has medium impact
     open_score = (
-        (open_yes_count * 1.0) +
-        (open_partial_count * 0.5) +
-        (open_no_count * 0.0)
+        (open_yes_count * 1.0)
+        + (open_partial_count * 0.5)
+        + (open_no_count * 0.0)
     ) / total_feedback_count
 
     accessibility_score = (
-        (accessible_yes_count * 1.0) +
-        (accessible_partial_count * 0.5) +
-        (accessible_no_count * 0.0) +
-        (accessible_unknown_count * 0.25)
+        (accessible_yes_count * 1.0)
+        + (accessible_partial_count * 0.5)
+        + (accessible_no_count * 0.0)
+        + (accessible_unknown_count * 0.25)
     ) / total_feedback_count
 
     condition_score = (
-        (condition_good_count * 1.0) +
-        (condition_okay_count * 0.6) +
-        (condition_poor_count * 0.0)
+        (condition_good_count * 1.0)
+        + (condition_okay_count * 0.6)
+        + (condition_poor_count * 0.0)
     ) / total_feedback_count
 
     # Final score in a 0-100 range.
     reliability_score = round(
-        ((open_score * 0.45) + (accessibility_score * 0.25) + (condition_score * 0.30)) * 100,
+        (
+            (open_score * 0.45)
+            + (accessibility_score * 0.25)
+            + (condition_score * 0.30)
+        )
+        * 100,
         1,
     )
 
@@ -241,6 +298,10 @@ def get_shelter_feedback_summary(
         open_yes_count=open_yes_count,
         open_partial_count=open_partial_count,
         open_no_count=open_no_count,
+        recent_open_yes_count=recent_open_yes_count,
+        recent_open_partial_count=recent_open_partial_count,
+        recent_open_no_count=recent_open_no_count,
+        last_feedback_at=last_feedback_at,
         accessible_yes_count=accessible_yes_count,
         accessible_partial_count=accessible_partial_count,
         accessible_no_count=accessible_no_count,
