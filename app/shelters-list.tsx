@@ -1,12 +1,27 @@
-import { SafeAreaView, View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import {
+  SafeAreaView,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Alert,
+} from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import * as Location from 'expo-location';
+
 import { API_BASE_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 import {
   getShelterFeedbackSummary,
   type ShelterFeedbackSummary,
 } from '../services/shelterFeedbackSummary';
+import {
+  getUserPreferences,
+  type UserPreferences,
+} from '../services/userPreferences';
+import { createShelterVisitSession } from '../services/shelterFeedback';
 
 // Represents a nearby shelter returned from the recommendation endpoints.
 type NearbyShelter = {
@@ -19,6 +34,7 @@ type NearbyShelter = {
   distance_meters: number;
   estimated_walk_minutes: number;
   source: string;
+  accessibility_notes?: string | null;
 };
 
 // Represents a nearby shelter extended with optional feedback summary data.
@@ -39,11 +55,31 @@ type AlertsResponse = {
     show_nearest_shelter_button: boolean;
   };
   experience?: {
-    focus_mode: 'normal' | 'current_location_warning' | 'current_location_emergency';
+    focus_mode:
+      | 'normal'
+      | 'current_location_warning'
+      | 'current_location_emergency';
     show_nearest_shelter_button: boolean;
     should_offer_shelter_guidance: boolean;
   };
 };
+
+type AccessibilityStatus =
+  | 'accessible'
+  | 'unclear'
+  | 'possibly_not_accessible';
+
+type OpenStatus =
+  | 'likely_open'
+  | 'unclear'
+  | 'mixed'
+  | 'likely_closed';
+
+type ConditionStatus =
+  | 'good'
+  | 'mixed'
+  | 'poor'
+  | 'unclear';
 
 // Formats distance for user-friendly display in the shelters list.
 function formatDistance(distanceMeters: number) {
@@ -54,12 +90,187 @@ function formatDistance(distanceMeters: number) {
   return `${(distanceMeters / 1000).toFixed(1)} km away`;
 }
 
+// Calculates the accessibility status using official notes and community reports.
+function getAccessibilityStatus(
+  shelter: NearbyShelterWithSummary
+): AccessibilityStatus {
+  const notes = shelter.accessibility_notes?.toLowerCase() || '';
+  const summary = shelter.feedbackSummary;
+
+  const hasNegativeNotes =
+    notes.includes('not accessible') ||
+    notes.includes('לא נגיש');
+
+  const hasPositiveNotes =
+    notes.includes('accessible') ||
+    notes.includes('נגיש');
+
+  // Negative wording must be checked before positive wording,
+  // because "not accessible" also contains "accessible".
+  if (hasNegativeNotes) {
+    return 'possibly_not_accessible';
+  }
+
+  if (hasPositiveNotes) {
+    return 'accessible';
+  }
+
+  if (!summary || summary.total_feedback_count === 0) {
+    return 'unclear';
+  }
+
+  if (summary.accessible_no_count > summary.accessible_yes_count) {
+    return 'possibly_not_accessible';
+  }
+
+  if (
+    summary.accessible_yes_count > 0 &&
+    summary.accessible_yes_count >= summary.accessible_no_count
+  ) {
+    return 'accessible';
+  }
+
+  return 'unclear';
+}
+
+// Calculates the current open status using only reports from the last 24 hours.
+function getOpenStatus(
+  summary?: ShelterFeedbackSummary | null
+): OpenStatus {
+  if (!summary) {
+    return 'unclear';
+  }
+
+  const recentYes = summary.recent_open_yes_count;
+  const recentPartial = summary.recent_open_partial_count;
+  const recentNo = summary.recent_open_no_count;
+
+  const recentReportsCount =
+    recentYes + recentPartial + recentNo;
+
+  // A single report is not enough for a confident conclusion.
+  if (recentReportsCount < 2) {
+    return 'unclear';
+  }
+
+  // A shelter is considered likely closed only when closed reports
+  // are greater than all positive and partial reports together.
+  if (recentNo > recentYes + recentPartial) {
+    return 'likely_closed';
+  }
+
+  // A clear majority of open reports indicates that it is likely open.
+  if (recentYes > recentNo && recentYes >= recentPartial) {
+    return 'likely_open';
+  }
+
+  return 'mixed';
+}
+
+// Converts the calculated open status into user-friendly text.
+function getOpenStatusLabel(
+  summary?: ShelterFeedbackSummary | null
+) {
+  const status = getOpenStatus(summary);
+
+  if (status === 'likely_open') {
+    return 'Open status: Likely open';
+  }
+
+  if (status === 'likely_closed') {
+    return 'Open status: Recently reported closed';
+  }
+
+  if (status === 'mixed') {
+    return 'Open status: Mixed recent reports';
+  }
+
+  return 'Open status: Information unclear';
+}
+
+// Calculates the general physical condition based on community feedback.
+function getConditionStatus(
+  summary?: ShelterFeedbackSummary | null
+): ConditionStatus {
+  if (!summary || summary.total_feedback_count === 0) {
+    return 'unclear';
+  }
+
+  const goodCount = summary.condition_good_count;
+  const okayCount = summary.condition_okay_count;
+  const poorCount = summary.condition_poor_count;
+
+  if (goodCount > poorCount && goodCount >= okayCount) {
+    return 'good';
+  }
+
+  if (poorCount > goodCount && poorCount >= okayCount) {
+    return 'poor';
+  }
+
+  return 'mixed';
+}
+
+// Converts the calculated condition into user-friendly text.
+function getConditionLabel(
+  summary?: ShelterFeedbackSummary | null
+) {
+  const status = getConditionStatus(summary);
+
+  if (status === 'good') {
+    return 'Condition: Mostly reported as good';
+  }
+
+  if (status === 'poor') {
+    return 'Condition: Possible issues reported';
+  }
+
+  if (status === 'mixed') {
+    return 'Condition: Mixed feedback';
+  }
+
+  return 'Condition: Information unclear';
+}
+
+// Displays the total number of community reports.
+function getCommunityReportsLabel(
+  summary?: ShelterFeedbackSummary | null
+) {
+  if (!summary || summary.total_feedback_count === 0) {
+    return 'Community reports: No feedback yet';
+  }
+
+  const reportWord =
+    summary.total_feedback_count === 1 ? 'report' : 'reports';
+
+  return `Community reports: ${summary.total_feedback_count} ${reportWord}`;
+}
+
+// Converts the calculated accessibility status into user-friendly text.
+function getAccessibilityLabel(
+  shelter: NearbyShelterWithSummary
+) {
+  const status = getAccessibilityStatus(shelter);
+
+  if (status === 'accessible') {
+    return 'Accessibility: Likely accessible';
+  }
+
+  if (status === 'possibly_not_accessible') {
+    return 'Accessibility: Possible issues reported';
+  }
+
+  return 'Accessibility: Information unclear';
+}
+
 export default function SheltersListScreen() {
-  // Router instance used for navigating back and opening navigation screen.
   const router = useRouter();
+  const { token, isAuthenticated } = useAuth();
 
   // Stores the nearby shelters loaded from the backend.
-  const [nearbyShelters, setNearbyShelters] = useState<NearbyShelterWithSummary[]>([]);
+  const [nearbyShelters, setNearbyShelters] = useState<
+    NearbyShelterWithSummary[]
+  >([]);
 
   // Controls the loading state while shelter data is being fetched.
   const [loadingShelters, setLoadingShelters] = useState(true);
@@ -70,8 +281,32 @@ export default function SheltersListScreen() {
   // Indicates whether the current location is in emergency mode.
   const [isEmergencyMode, setIsEmergencyMode] = useState(false);
 
+  // Stores current user preferences when available.
+  const [userPreferences, setUserPreferences] =
+    useState<UserPreferences | null>(null);
+
+  const loadUserPreferences = async () => {
+    if (!token || !isAuthenticated) {
+      setUserPreferences(null);
+      return;
+    }
+
+    try {
+      const preferences = await getUserPreferences(token);
+      setUserPreferences(preferences);
+    } catch (error) {
+      console.log(
+        'Failed to load user preferences for shelters list:',
+        error
+      );
+      setUserPreferences(null);
+    }
+  };
+
   // Loads alert state for the current city and updates emergency mode accordingly.
-  const loadAlertsState = async (cityName: string | null) => {
+  const loadAlertsState = async (
+    cityName: string | null
+  ): Promise<boolean> => {
     try {
       const params = new URLSearchParams();
 
@@ -79,29 +314,41 @@ export default function SheltersListScreen() {
         params.append('current_city', cityName);
       }
 
-      const response = await fetch(`${API_BASE_URL}/alerts/?${params.toString()}`);
+      const response = await fetch(
+        `${API_BASE_URL}/alerts/?${params.toString()}`
+      );
 
       if (!response.ok) {
         setIsEmergencyMode(false);
-        return;
+        return false;
       }
 
       const data: AlertsResponse = await response.json();
 
-      // Decide whether the app should use the emergency shelter flow
-      // based on relevance and experience fields returned by the alerts API.
       const shouldUseEmergencyShelterFlow =
         data.relevance.current_location_match ||
         data.relevance.show_nearest_shelter_button ||
         data.experience?.show_nearest_shelter_button ||
         data.experience?.should_offer_shelter_guidance ||
-        data.experience?.focus_mode === 'current_location_emergency' ||
-        data.experience?.focus_mode === 'current_location_warning';
+        data.experience?.focus_mode ===
+          'current_location_emergency' ||
+        data.experience?.focus_mode ===
+          'current_location_warning';
 
-      setIsEmergencyMode(Boolean(shouldUseEmergencyShelterFlow));
+      const emergencyMode = Boolean(
+        shouldUseEmergencyShelterFlow
+      );
+
+      setIsEmergencyMode(emergencyMode);
+
+      return emergencyMode;
     } catch (error) {
-      console.log('Failed to load alerts state for shelters list:', error);
+      console.log(
+        'Failed to load alerts state for shelters list:',
+        error
+      );
       setIsEmergencyMode(false);
+      return false;
     }
   };
 
@@ -138,198 +385,311 @@ export default function SheltersListScreen() {
     return sheltersWithSummaries;
   };
 
-  // Loads nearby shelters based on the user's current location
-  // and switches between normal and emergency recommendation endpoints if needed.
+  const shouldWarnBeforeNavigation = () => {
+    return Boolean(
+      userPreferences &&
+        (
+          userPreferences.mobility_status === 'limited' ||
+          userPreferences.prefer_accessible_route
+        )
+    );
+  };
+
+  const openNavigation = async (
+    shelter: NearbyShelterWithSummary
+  ) => {
+    let visitSessionId: number | null = null;
+
+    try {
+      if (token) {
+        const visitSession =
+          await createShelterVisitSession(
+            token,
+            shelter.id,
+            shelter.source
+          );
+
+        visitSessionId = visitSession.id;
+      }
+    } catch (error) {
+      console.log(
+        'Failed to create shelter visit session from shelters list:',
+        error
+      );
+    }
+
+    router.push({
+      pathname: '/navigation',
+      params: {
+        name: shelter.name,
+        latitude: String(shelter.latitude),
+        longitude: String(shelter.longitude),
+        source: shelter.source,
+        shelterId: String(shelter.id),
+        visitSessionId: visitSessionId
+          ? String(visitSessionId)
+          : '',
+      },
+    });
+  };
+
+  const handleShelterPress = async (
+    shelter: NearbyShelterWithSummary
+  ) => {
+    const accessibilityStatus =
+      getAccessibilityStatus(shelter);
+
+    if (
+      shouldWarnBeforeNavigation() &&
+      accessibilityStatus !== 'accessible'
+    ) {
+      const message =
+        accessibilityStatus ===
+        'possibly_not_accessible'
+          ? 'This shelter may not be fully accessible. Please take this into account before starting navigation.'
+          : 'Accessibility information for this shelter is limited. Please take this into account before starting navigation.';
+
+      Alert.alert(
+        'Accessibility notice',
+        message,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Continue',
+            onPress: () => {
+              openNavigation(shelter);
+            },
+          },
+        ]
+      );
+
+      return;
+    }
+
+    await openNavigation(shelter);
+  };
+
+  // Loads nearby shelters based on the user's current location.
   const loadNearbyShelters = async () => {
     try {
       setLoadingShelters(true);
       setLocationError('');
 
-      // Ask for foreground location permission before accessing user location.
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      await loadUserPreferences();
+
+      const { status } =
+        await Location.requestForegroundPermissionsAsync();
 
       if (status !== 'granted') {
-        setLocationError('Location permission was denied.');
+        setLocationError(
+          'Location permission was denied.'
+        );
         setNearbyShelters([]);
         return;
       }
 
-      // Get the user's current GPS location.
-      const location = await Location.getCurrentPositionAsync({});
+      const location =
+        await Location.getCurrentPositionAsync({});
 
       let cityName: string | null = null;
 
       try {
-        // Reverse geocode the coordinates into a city/subregion/region name.
-        const reverseGeocoded = await Location.reverseGeocodeAsync({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
+        const reverseGeocoded =
+          await Location.reverseGeocodeAsync({
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          });
 
         if (reverseGeocoded.length > 0) {
           const place = reverseGeocoded[0];
-          cityName = place.city || place.subregion || place.region || null;
+
+          cityName =
+            place.city ||
+            place.subregion ||
+            place.region ||
+            null;
         }
       } catch (error) {
-        console.log('Failed to reverse geocode current city for shelters list:', error);
+        console.log(
+          'Failed to reverse geocode current city for shelters list:',
+          error
+        );
       }
 
-      // Load alert-based emergency state for the resolved city.
-      await loadAlertsState(cityName);
+      const useEmergencyMode =
+        await loadAlertsState(cityName);
 
-      const alertsParams = new URLSearchParams();
-      if (cityName) {
-        alertsParams.append('current_city', cityName);
-      }
-
-      let useEmergencyMode = false;
-
-      try {
-        // Fetch alerts again to confirm whether emergency shelter flow should be used.
-        const alertsResponse = await fetch(`${API_BASE_URL}/alerts/?${alertsParams.toString()}`);
-
-        if (alertsResponse.ok) {
-          const alertsData: AlertsResponse = await alertsResponse.json();
-
-          useEmergencyMode =
-            alertsData.relevance.current_location_match ||
-            alertsData.relevance.show_nearest_shelter_button ||
-            alertsData.experience?.show_nearest_shelter_button ||
-            alertsData.experience?.should_offer_shelter_guidance ||
-            alertsData.experience?.focus_mode === 'current_location_emergency' ||
-            alertsData.experience?.focus_mode === 'current_location_warning';
-
-          setIsEmergencyMode(Boolean(useEmergencyMode));
-        } else {
-          setIsEmergencyMode(false);
-        }
-      } catch (error) {
-        console.log('Failed to confirm alerts state for shelters list:', error);
-        setIsEmergencyMode(false);
-      }
-
-      // Choose the appropriate nearby shelters endpoint depending on emergency state.
       const endpoint = useEmergencyMode
         ? `${API_BASE_URL}/recommendations/nearby-emergency-shelters`
         : `${API_BASE_URL}/recommendations/nearby-shelters`;
 
-      // Request ranked nearby shelters from the backend.
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_latitude: location.coords.latitude,
-          user_longitude: location.coords.longitude,
+          user_latitude:
+            location.coords.latitude,
+          user_longitude:
+            location.coords.longitude,
           limit: 10,
         }),
       });
 
       if (!response.ok) {
+        console.log(
+          'Failed to load nearby shelters'
+        );
         setNearbyShelters([]);
         return;
       }
 
-      const data: NearbyShelter[] = await response.json();
-      const sheltersWithSummaries = await enrichSheltersWithFeedbackSummary(data);
+      const data: NearbyShelter[] =
+        await response.json();
+
+      const sheltersWithSummaries =
+        await enrichSheltersWithFeedbackSummary(
+          data
+        );
 
       setNearbyShelters(sheltersWithSummaries);
     } catch (error) {
-      console.log('Failed to load shelters list:', error);
+      console.log(
+        'Failed to load shelters list:',
+        error
+      );
       setNearbyShelters([]);
-      setLocationError('Failed to load nearby shelters.');
+      setLocationError(
+        'Failed to load nearby shelters.'
+      );
     } finally {
       setLoadingShelters(false);
     }
   };
 
-  // Reload the nearby shelters every time the screen becomes focused.
   useFocusEffect(
     useCallback(() => {
       loadNearbyShelters();
-    }, [])
+    }, [token, isAuthenticated])
   );
-
-  // Returns a short community feedback label for the shelter card.
-  const renderCommunityFeedbackText = (summary?: ShelterFeedbackSummary | null) => {
-    if (!summary || summary.total_feedback_count === 0) {
-      return 'Community feedback: No feedback yet';
-    }
-
-    return `Community feedback: ${summary.summary_label}`;
-  };
-
-  // Returns score and reports text for the shelter card.
-  const renderCommunityScoreText = (summary?: ShelterFeedbackSummary | null) => {
-    if (!summary || summary.total_feedback_count === 0) {
-      return null;
-    }
-
-    return `Score: ${summary.reliability_score} • ${summary.total_feedback_count} reports`;
-  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Header section with back button and emergency mode indicator */}
+      <ScrollView
+        contentContainerStyle={styles.content}
+      >
         <View style={styles.header}>
-          <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backButtonText}>Back</Text>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.backButtonText}>
+              Back
+            </Text>
           </Pressable>
 
-          <Text style={styles.title}>Nearby Shelters</Text>
+          <Text style={styles.title}>
+            Nearby Shelters
+          </Text>
+
           <Text style={styles.subtitle}>
-            {isEmergencyMode ? 'EMERGENCY MODE ON' : 'EMERGENCY MODE OFF'}
+            {isEmergencyMode
+              ? 'EMERGENCY MODE ON'
+              : 'EMERGENCY MODE OFF'}
           </Text>
         </View>
 
-        {/* Main shelters list section with loading, error, empty, and content states */}
         <View style={styles.listSection}>
           {loadingShelters ? (
-            <Text style={styles.helperText}>Loading shelters...</Text>
+            <Text style={styles.helperText}>
+              Loading shelters...
+            </Text>
           ) : locationError ? (
-            <Text style={styles.helperText}>{locationError}</Text>
+            <Text style={styles.helperText}>
+              {locationError}
+            </Text>
           ) : nearbyShelters.length === 0 ? (
-            <Text style={styles.helperText}>No nearby shelters found.</Text>
+            <Text style={styles.helperText}>
+              No nearby shelters found.
+            </Text>
           ) : (
             nearbyShelters.map((shelter) => (
               <Pressable
                 key={`${shelter.source}-${shelter.id}`}
                 style={styles.shelterCard}
                 onPress={() =>
-                  router.push({
-                    pathname: '/navigation',
-                    params: {
-                      name: shelter.name,
-                      latitude: String(shelter.latitude),
-                      longitude: String(shelter.longitude),
-                      source: shelter.source,
-                      shelterId: String(shelter.id),
-                    },
-                  })
+                  handleShelterPress(shelter)
                 }
               >
-                {/* Shelter basic info */}
-                <Text style={styles.shelterName}>{shelter.name}</Text>
-                <Text style={styles.shelterInfo}>
-                  {shelter.address || shelter.city}
-                </Text>
-                <Text style={styles.shelterInfo}>
-                  {formatDistance(shelter.distance_meters)} • {shelter.estimated_walk_minutes} min walk
-                </Text>
-                <Text style={styles.shelterSource}>Source: {shelter.source}</Text>
-
-                {/* Community feedback summary */}
-                <Text style={styles.communityFeedbackText}>
-                  {renderCommunityFeedbackText(shelter.feedbackSummary)}
+                <Text style={styles.shelterName}>
+                  {shelter.name}
                 </Text>
 
-                {renderCommunityScoreText(shelter.feedbackSummary) ? (
-                  <Text style={styles.communityFeedbackMeta}>
-                    {renderCommunityScoreText(shelter.feedbackSummary)}
-                  </Text>
-                ) : null}
+                <Text style={styles.shelterInfo}>
+                  {shelter.address ||
+                    shelter.city}
+                </Text>
+
+                <Text style={styles.shelterInfo}>
+                  {formatDistance(
+                    shelter.distance_meters
+                  )}{' '}
+                  •{' '}
+                  {
+                    shelter.estimated_walk_minutes
+                  }{' '}
+                  min walk
+                </Text>
+
+                <Text
+                  style={styles.shelterSource}
+                >
+                  Source: {shelter.source}
+                </Text>
+
+                <Text
+                  style={
+                    styles.communityFeedbackText
+                  }
+                >
+                  {getCommunityReportsLabel(
+                    shelter.feedbackSummary
+                  )}
+                </Text>
+
+                <Text
+                  style={
+                    styles.communityFeedbackMeta
+                  }
+                >
+                  {getOpenStatusLabel(
+                    shelter.feedbackSummary
+                  )}
+                </Text>
+
+                <Text
+                  style={
+                    styles.communityFeedbackMeta
+                  }
+                >
+                  {getAccessibilityLabel(
+                    shelter
+                  )}
+                </Text>
+
+                <Text
+                  style={
+                    styles.communityFeedbackMeta
+                  }
+                >
+                  {getConditionLabel(
+                    shelter.feedbackSummary
+                  )}
+                </Text>
               </Pressable>
             ))
           )}

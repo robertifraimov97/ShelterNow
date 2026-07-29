@@ -43,7 +43,6 @@ function formatDuration(durationSeconds: number) {
 }
 
 // Calculates straight-line distance between two coordinates using the Haversine formula.
-// Used here to decide when the user moved enough to trigger route recalculation.
 function calculateDistanceMeters(
   lat1: number,
   lon1: number,
@@ -77,6 +76,8 @@ export default function NavigationScreen() {
   const shelterLatitude = Number(params.latitude);
   const shelterLongitude = Number(params.longitude);
   const shelterSource = String(params.source || 'Official');
+  const shelterId = Number(params.shelterId);
+  const visitSessionId = Number(params.visitSessionId);
 
   // Determine visual behavior based on whether the destination is a community shelter.
   const isCommunityShelter = shelterSource === 'Community';
@@ -102,12 +103,14 @@ export default function NavigationScreen() {
   // Ref to control the map programmatically.
   const mapRef = useRef<MapView | null>(null);
 
-  // Stores the last location from which a reroute was calculated,
-  // so route recalculation only happens after enough user movement.
+  // Stores the last location from which a reroute was calculated.
   const lastRerouteLocationRef = useRef<{
     latitude: number;
     longitude: number;
   } | null>(null);
+
+  const hasValidVisitSessionId =
+    Number.isFinite(visitSessionId) && visitSessionId > 0;
 
   // Requests a walking route from the backend routing endpoint.
   const loadWalkingRoute = async (
@@ -160,6 +163,22 @@ export default function NavigationScreen() {
     } finally {
       setIsLoadingRoute(false);
     }
+  };
+
+  const handleOpenShelterFeedback = () => {
+    if (!hasValidVisitSessionId) {
+      return;
+    }
+
+    router.push({
+      pathname: '/shelter-feedback',
+      params: {
+        visitSessionId: String(visitSessionId),
+        shelterName,
+        shelterId: String(shelterId),
+        shelterSource,
+      },
+    });
   };
 
   useEffect(() => {
@@ -294,6 +313,29 @@ export default function NavigationScreen() {
               ? 'Updating route...'
               : `${destinationTypeLabel} • Live navigation preview`}
           </Text>
+
+          {hasValidVisitSessionId && (
+            <Pressable
+              style={{
+                marginTop: 14,
+                backgroundColor: '#2563EB',
+                borderRadius: 14,
+                paddingVertical: 14,
+                alignItems: 'center',
+              }}
+              onPress={handleOpenShelterFeedback}
+            >
+              <Text
+                style={{
+                  color: '#FFFFFF',
+                  fontSize: 15,
+                  fontWeight: '700',
+                }}
+              >
+                Report Shelter Experience
+              </Text>
+            </Pressable>
+          )}
         </View>
 
         {/* Map and live navigation section */}

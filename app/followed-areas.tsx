@@ -1,12 +1,21 @@
-import { SafeAreaView, View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import {
+  SafeAreaView,
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+} from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
+
 import { API_BASE_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 
 // Represents a followed area record returned from the backend.
 type FollowedArea = {
   id: number;
+  user_identifier?: string;
   area_name: string;
   city_code?: string | null;
   label?: string | null;
@@ -15,114 +24,187 @@ type FollowedArea = {
 
 export default function FollowedAreasScreen() {
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, isAuthenticated } = useAuth();
 
-  // State for all followed areas loaded from the backend.
+  // Stores all followed areas loaded from the backend.
   const [areas, setAreas] = useState<FollowedArea[]>([]);
 
-  // State for the loading indicator while areas are being fetched.
+  // Controls the loading state while areas are being fetched.
   const [loading, setLoading] = useState(true);
 
-  // State for tracking which area is currently being deleted.
+  // Stores an error message if the request fails.
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Tracks which area is currently being deleted.
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // Loads the followed areas list from the backend API.
   const loadFollowedAreas = async () => {
     try {
       setLoading(true);
+      setErrorMessage('');
+
+      if (!token || !isAuthenticated) {
+        setAreas([]);
+        setErrorMessage('You must be signed in to view followed areas.');
+        return;
+      }
 
       const response = await fetch(`${API_BASE_URL}/followed-areas/`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
-      const data = await response.json();
 
-      setAreas(Array.isArray(data) ? data : []);
+      if (!response.ok) {
+        const errorText = await response.text();
+
+        console.log(
+          'Failed to load followed areas:',
+          response.status,
+          errorText
+        );
+
+        setAreas([]);
+        setErrorMessage('Failed to load followed areas.');
+        return;
+      }
+
+      const data: unknown = await response.json();
+
+      // Prevent invalid API responses from reaching the list state.
+      if (!Array.isArray(data)) {
+        console.log('Unexpected followed areas response:', data);
+        setAreas([]);
+        setErrorMessage('The server returned an unexpected response.');
+        return;
+      }
+
+      setAreas(data as FollowedArea[]);
     } catch (error) {
       console.log('Failed to load followed areas:', error);
+      setAreas([]);
+      setErrorMessage('Failed to connect to the server.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Deletes a followed area by ID and removes it from local state if successful.
+  // Deletes a followed area by ID.
   const handleRemoveArea = async (id: number) => {
     try {
-      setDeletingId(id);
-
-      const response = await fetch(`${API_BASE_URL}/followed-areas/${id}`, {
-        method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.log('Failed to delete followed area:', errorData);
+      if (!token || !isAuthenticated) {
+        setErrorMessage('You must be signed in to remove an area.');
         return;
       }
 
-      setAreas((prevAreas) => prevAreas.filter((area) => area.id !== id));
+      setDeletingId(id);
+      setErrorMessage('');
+
+      const response = await fetch(`${API_BASE_URL}/followed-areas/${id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+
+        console.log(
+          'Failed to delete followed area:',
+          response.status,
+          errorText
+        );
+
+        setErrorMessage('Failed to remove the followed area.');
+        return;
+      }
+
+      setAreas((previousAreas) =>
+        previousAreas.filter((area) => area.id !== id)
+      );
     } catch (error) {
       console.log('Network error while deleting followed area:', error);
+      setErrorMessage('Failed to connect to the server.');
     } finally {
       setDeletingId(null);
     }
   };
 
-  // Reload the followed areas list whenever this screen gains focus.
+  // Reloads followed areas whenever the screen gains focus.
   useFocusEffect(
     useCallback(() => {
       loadFollowedAreas();
-    }, [])
+    }, [token, isAuthenticated])
   );
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Header section with back button and screen description */}
         <View style={styles.header}>
-          <Pressable style={styles.backButton} onPress={() => router.back()}>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
             <Text style={styles.backButtonText}>Back</Text>
           </Pressable>
 
           <Text style={styles.title}>Followed Areas</Text>
+
           <Text style={styles.subtitle}>
             Manage the areas you want to monitor for alerts
           </Text>
         </View>
 
-        {/* Button to navigate to the screen for adding a new followed area */}
         <Pressable
           style={styles.addButton}
-          onPress={() => router.push('/add-followed-area')}>
+          onPress={() => router.push('/add-followed-area')}
+          disabled={!isAuthenticated}
+        >
           <Text style={styles.addButtonText}>Add Area</Text>
         </Pressable>
 
-        {/* Main list section showing loading state, empty state, or followed areas */}
         <View style={styles.listSection}>
           {loading ? (
-            <Text style={styles.helperText}>Loading followed areas...</Text>
+            <Text style={styles.helperText}>
+              Loading followed areas...
+            </Text>
+          ) : errorMessage ? (
+            <Text style={styles.errorText}>{errorMessage}</Text>
           ) : areas.length === 0 ? (
-            <Text style={styles.helperText}>No followed areas yet.</Text>
+            <Text style={styles.helperText}>
+              No followed areas yet.
+            </Text>
           ) : (
             areas.map((area) => (
               <View key={area.id} style={styles.areaCard}>
-                {/* Display the followed area name */}
-                <Text style={styles.areaName}>{area.area_name}</Text>
+                <Text style={styles.areaName}>
+                  {area.area_name}
+                </Text>
 
-                {/* Optional label badge shown only if the area has a label */}
                 {area.label ? (
                   <View style={styles.statusBadge}>
-                    <Text style={styles.statusBadgeText}>{area.label}</Text>
+                    <Text style={styles.statusBadgeText}>
+                      {area.label}
+                    </Text>
                   </View>
                 ) : null}
 
-                {/* Button to remove the selected followed area */}
                 <Pressable
-                  style={styles.removeButton}
+                  style={[
+                    styles.removeButton,
+                    deletingId === area.id &&
+                      styles.removeButtonDisabled,
+                  ]}
                   onPress={() => handleRemoveArea(area.id)}
-                  disabled={deletingId === area.id}>
+                  disabled={deletingId === area.id}
+                >
                   <Text style={styles.removeButtonText}>
-                    {deletingId === area.id ? 'Removing...' : 'Remove'}
+                    {deletingId === area.id
+                      ? 'Removing...'
+                      : 'Remove'}
                   </Text>
                 </Pressable>
               </View>
@@ -188,6 +270,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#64748B',
   },
+  errorText: {
+    fontSize: 15,
+    color: '#B91C1C',
+  },
   areaCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -219,6 +305,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 12,
+  },
+  removeButtonDisabled: {
+    opacity: 0.6,
   },
   removeButtonText: {
     color: '#B91C1C',

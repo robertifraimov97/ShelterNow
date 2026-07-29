@@ -7,6 +7,14 @@ import { styles } from '../../styles/home.styles';
 import { API_BASE_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { createShelterVisitSession } from '../../services/shelterFeedback';
+import {
+  getShelterFeedbackSummary,
+  type ShelterFeedbackSummary,
+} from '../../services/shelterFeedbackSummary';
+import {
+  getUserPreferences,
+  type UserPreferences,
+} from '../../services/userPreferences';
 
 // Represents an official shelter object returned from the backend.
 type OfficialShelter = {
@@ -27,8 +35,8 @@ type OfficialShelter = {
   updated_at?: string;
 };
 
-// Represents the single best shelter recommendation returned from the backend.
-type BestShelterRecommendation = {
+// Represents a ranked nearby shelter returned from recommendation endpoints.
+type NearbyShelter = {
   id: number;
   name: string;
   city: string;
@@ -38,7 +46,14 @@ type BestShelterRecommendation = {
   distance_meters: number;
   estimated_walk_minutes: number;
   source: string;
+  accessibility_notes?: string | null;
 };
+
+type NearbyShelterWithSummary = NearbyShelter & {
+  feedbackSummary?: ShelterFeedbackSummary | null;
+};
+
+type AccessibilityStatus = 'accessible' | 'unclear' | 'possibly_not_accessible';
 
 // Represents one coordinate point in a walking route polyline.
 type RoutePoint = {
@@ -81,9 +96,134 @@ function formatDistance(distanceMeters: number) {
   return `${(distanceMeters / 1000).toFixed(1)}km`;
 }
 
+function getAccessibilityStatus(
+  shelter: NearbyShelterWithSummary
+): AccessibilityStatus {
+  const notes = shelter.accessibility_notes?.toLowerCase() || '';
+  const summary = shelter.feedbackSummary;
+
+  const hasPositiveNotes =
+    notes.includes('accessible') ||
+    notes.includes('נגיש');
+
+  const hasNegativeNotes =
+    notes.includes('not accessible') ||
+    notes.includes('לא נגיש');
+
+  if (hasNegativeNotes) {
+    return 'possibly_not_accessible';
+  }
+
+  if (hasPositiveNotes) {
+    return 'accessible';
+  }
+
+  if (!summary || summary.total_feedback_count === 0) {
+    return 'unclear';
+  }
+
+  if (summary.accessible_no_count > summary.accessible_yes_count) {
+    return 'possibly_not_accessible';
+  }
+
+  if (
+    summary.accessible_yes_count > 0 &&
+    summary.accessible_yes_count >= summary.accessible_no_count
+  ) {
+    return 'accessible';
+  }
+
+  if (summary.accessible_partial_count > 0 || summary.accessible_unknown_count > 0) {
+    return 'unclear';
+  }
+
+  return 'unclear';
+}
+
+function shouldPreferAccessibility(preferences: UserPreferences | null) {
+  return Boolean(
+    preferences &&
+      (
+        preferences.mobility_status === 'limited' ||
+        preferences.prefer_accessible_route
+      )
+  );
+}
+
+function chooseRecommendedShelter(
+  shelters: NearbyShelterWithSummary[],
+  preferences: UserPreferences | null
+): {
+  shelter: NearbyShelterWithSummary | null;
+  recommendationReason: string | null;
+} {
+  if (shelters.length === 0) {
+    return {
+      shelter: null,
+      recommendationReason: null,
+    };
+  }
+
+  const defaultShelter = shelters[0];
+  const defaultShelterAccessibility = getAccessibilityStatus(defaultShelter);
+
+    if (!shouldPreferAccessibility(preferences)) {
+      return {
+        shelter: defaultShelter,
+        recommendationReason: null,
+      };
+    }
+
+    if (defaultShelterAccessibility === 'accessible') {
+      return {
+        shelter: defaultShelter,
+        recommendationReason: null,
+      };
+    }
+
+  if (!shouldPreferAccessibility(preferences)) {
+    return {
+      shelter: defaultShelter,
+      recommendationReason: null,
+    };
+  }
+
+  const accessibleShelter = shelters.find(
+    (shelter) => getAccessibilityStatus(shelter) === 'accessible'
+  );
+
+  if (!accessibleShelter) {
+    return {
+      shelter: defaultShelter,
+      recommendationReason: 'No clearly accessible shelter was found nearby, so the shortest route was kept.',
+    };
+  }
+
+  const extraMinutes =
+    accessibleShelter.estimated_walk_minutes - defaultShelter.estimated_walk_minutes;
+
+  const extraDistance =
+    accessibleShelter.distance_meters - defaultShelter.distance_meters;
+
+  const isAccessibleOverrideReasonable =
+    extraMinutes <= 2 || extraDistance <= 150;
+
+  if (isAccessibleOverrideReasonable) {
+    return {
+      shelter: accessibleShelter,
+      recommendationReason: 'An accessible nearby option was preferred because the extra distance was small.',
+    };
+  }
+
+  return {
+    shelter: defaultShelter,
+    recommendationReason: 'A shorter route was kept because the nearest accessible option was significantly farther away.',
+  };
+}
+
 export default function HomeScreen() {
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, isAuthenticated } = useAuth();
 
   // Stores the user's current GPS location.
   const [userLocation, setUserLocation] = useState<{
@@ -103,8 +243,14 @@ export default function HomeScreen() {
   // Stores all official shelters for displaying markers on the map.
   const [officialShelters, setOfficialShelters] = useState<OfficialShelter[]>([]);
 
+  // Stores current user preferences when available.
+  const [userPreferences, setUserPreferences] = useState<UserPreferences | null>(null);
+
   // Stores the best shelter recommendation for the current user location.
-  const [bestShelter, setBestShelter] = useState<BestShelterRecommendation | null>(null);
+  const [bestShelter, setBestShelter] = useState<NearbyShelterWithSummary | null>(null);
+
+  // Explains why the current shelter was selected.
+  const [recommendationReason, setRecommendationReason] = useState<string | null>(null);
 
   // Stores the polyline points for the walking route to the best shelter.
   const [walkingRoute, setWalkingRoute] = useState<RoutePoint[]>([]);
@@ -117,6 +263,21 @@ export default function HomeScreen() {
 
   // Reference to the map, used for animating back to the user's location.
   const mapRef = useRef<MapView | null>(null);
+
+  const loadUserPreferences = async () => {
+    if (!token || !isAuthenticated) {
+      setUserPreferences(null);
+      return;
+    }
+
+    try {
+      const preferences = await getUserPreferences(token);
+      setUserPreferences(preferences);
+    } catch (error) {
+      console.log('Failed to load user preferences for home screen:', error);
+      setUserPreferences(null);
+    }
+  };
 
   // Loads all official shelters from the backend and keeps only those with coordinates.
   const loadOfficialShelters = async () => {
@@ -153,8 +314,6 @@ export default function HomeScreen() {
 
       const data: AlertsResponse = await response.json();
 
-      // Emergency mode becomes active if the user's location is affected
-      // or the backend experience/relevance layers say shelter guidance should be shown.
       const shouldUseEmergencyShelterFlow =
         data.relevance.current_location_match ||
         data.relevance.show_nearest_shelter_button ||
@@ -173,19 +332,51 @@ export default function HomeScreen() {
     }
   };
 
-  // Loads the best shelter recommendation from the backend.
-  // Uses a different endpoint depending on whether emergency mode is active.
-  const loadBestShelterRecommendation = async (
+  const enrichSheltersWithFeedbackSummary = async (
+    shelters: NearbyShelter[]
+  ): Promise<NearbyShelterWithSummary[]> => {
+    const sheltersWithSummaries = await Promise.all(
+      shelters.map(async (shelter) => {
+        try {
+          const summary = await getShelterFeedbackSummary(
+            shelter.source,
+            shelter.id
+          );
+
+          return {
+            ...shelter,
+            feedbackSummary: summary,
+          };
+        } catch (error) {
+          console.log(
+            `Failed to load feedback summary for home shelter ${shelter.id}:`,
+            error
+          );
+
+          return {
+            ...shelter,
+            feedbackSummary: null,
+          };
+        }
+      })
+    );
+
+    return sheltersWithSummaries;
+  };
+
+  // Loads nearby shelters and then chooses the recommended one based on preferences.
+  const loadRecommendedShelter = async (
     latitude: number,
     longitude: number,
-    useEmergencyMode: boolean
+    useEmergencyMode: boolean,
+    preferences: UserPreferences | null
   ) => {
     try {
       setLoadingBestShelter(true);
 
       const endpoint = useEmergencyMode
-        ? `${API_BASE_URL}/recommendations/best-emergency-shelter`
-        : `${API_BASE_URL}/recommendations/best-shelter`;
+        ? `${API_BASE_URL}/recommendations/nearby-emergency-shelters`
+        : `${API_BASE_URL}/recommendations/nearby-shelters`;
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -195,20 +386,31 @@ export default function HomeScreen() {
         body: JSON.stringify({
           user_latitude: latitude,
           user_longitude: longitude,
+          limit: 10,
         }),
       });
 
       if (!response.ok) {
-        console.log('Failed to load best shelter recommendation');
+        console.log('Failed to load nearby shelters for recommendation');
         setBestShelter(null);
+        setRecommendationReason(null);
         return;
       }
 
-      const data = await response.json();
-      setBestShelter(data);
+      const data: NearbyShelter[] = await response.json();
+      const sheltersWithSummaries = await enrichSheltersWithFeedbackSummary(data);
+
+      const recommendation = chooseRecommendedShelter(
+        sheltersWithSummaries,
+        preferences
+      );
+
+      setBestShelter(recommendation.shelter);
+      setRecommendationReason(recommendation.recommendationReason);
     } catch (error) {
-      console.log('Failed to load best shelter recommendation:', error);
+      console.log('Failed to load recommended shelter:', error);
       setBestShelter(null);
+      setRecommendationReason(null);
     } finally {
       setLoadingBestShelter(false);
     }
@@ -249,11 +451,12 @@ export default function HomeScreen() {
     }
   };
 
-  // Loads all main screen data:
-  // location, current city, emergency mode, official shelters, and best shelter recommendation.
+  // Loads all main screen data.
   const loadHomeScreenData = async () => {
     try {
       setLoadingBestShelter(true);
+
+      await loadUserPreferences();
 
       const { status } = await Location.requestForegroundPermissionsAsync();
 
@@ -269,6 +472,8 @@ export default function HomeScreen() {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
       };
+
+      console.log('User location:', coords);
 
       setUserLocation(coords);
 
@@ -289,17 +494,25 @@ export default function HomeScreen() {
 
       const emergencyMode = await resolveEmergencyMode(cityName);
 
+      const preferences = token && isAuthenticated
+        ? await getUserPreferences(token).catch(() => null)
+        : null;
+
+      setUserPreferences(preferences);
+
       await Promise.all([
         loadOfficialShelters(),
-        loadBestShelterRecommendation(
+        loadRecommendedShelter(
           coords.latitude,
           coords.longitude,
-          emergencyMode
+          emergencyMode,
+          preferences
         ),
       ]);
     } catch (error) {
       console.log('Failed to load home screen data:', error);
       setBestShelter(null);
+      setRecommendationReason(null);
       setLoadingBestShelter(false);
     }
   };
@@ -310,17 +523,19 @@ export default function HomeScreen() {
       return;
     }
 
+    let visitSessionId: number | null = null;
+
     try {
       setStartingRoute(true);
 
-      // Create a visit session only for logged-in users.
-      // Navigation itself should still work even without authentication.
       if (token) {
-        await createShelterVisitSession(
+        const visitSession = await createShelterVisitSession(
           token,
           bestShelter.id,
           bestShelter.source
         );
+
+        visitSessionId = visitSession.id;
       }
     } catch (error) {
       console.log('Failed to create shelter visit session:', error);
@@ -336,6 +551,7 @@ export default function HomeScreen() {
         longitude: String(bestShelter.longitude),
         source: bestShelter.source,
         shelterId: String(bestShelter.id),
+        visitSessionId: visitSessionId ? String(visitSessionId) : '',
       },
     });
   };
@@ -352,8 +568,7 @@ export default function HomeScreen() {
     }, [])
   );
 
-  // Whenever the user location or best shelter changes,
-  // reload the walking route between them.
+  // Whenever the user location or best shelter changes, reload the walking route between them.
   useEffect(() => {
     if (!userLocation || !bestShelter) {
       setWalkingRoute([]);
@@ -371,13 +586,11 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        {/* App header */}
         <View style={styles.header}>
           <Text style={styles.appName}>ShelterNow</Text>
           <Text style={styles.subtitle}>Emergency shelter guidance</Text>
         </View>
 
-        {/* Status card showing whether the app is currently in emergency mode */}
         <View style={styles.statusCard}>
           <Text style={styles.statusLabel}>Status</Text>
           <Text
@@ -390,7 +603,6 @@ export default function HomeScreen() {
           </Text>
         </View>
 
-        {/* Main card showing the best recommended shelter */}
         <View style={styles.mainCard}>
           <Text style={styles.cardTitle}>Nearest Shelter</Text>
 
@@ -409,6 +621,19 @@ export default function HomeScreen() {
               <Text style={styles.cardSource}>
                 {bestShelter.source} source
               </Text>
+
+              {recommendationReason ? (
+                <Text
+                  style={{
+                    marginTop: 8,
+                    fontSize: 13,
+                    color: '#475569',
+                    lineHeight: 18,
+                  }}
+                >
+                  {recommendationReason}
+                </Text>
+              ) : null}
             </>
           ) : (
             <>
@@ -418,7 +643,6 @@ export default function HomeScreen() {
             </>
           )}
 
-          {/* Main action button that opens navigation to the selected shelter */}
           <View style={styles.goButtonWrapper}>
             <View style={styles.emergencyButtonHalo}>
               <Pressable
@@ -437,7 +661,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Quick map preview section */}
         <View style={styles.mapSection}>
           <Text style={styles.mapTitle}>Quick Map Preview</Text>
 
@@ -469,7 +692,6 @@ export default function HomeScreen() {
                     setShowCenterButton(movedAway);
                   }}
                 >
-                  {/* Marker for the user's current location */}
                   <Marker
                     coordinate={{
                       latitude: userLocation.latitude,
@@ -480,7 +702,6 @@ export default function HomeScreen() {
                     pinColor="red"
                   />
 
-                  {/* Markers for all official shelters */}
                   {officialShelters.map((shelter) => (
                     <Marker
                       key={shelter.id}
@@ -494,7 +715,6 @@ export default function HomeScreen() {
                     />
                   ))}
 
-                  {/* Polyline showing the walking route to the best shelter */}
                   {walkingRoute.length > 0 && (
                     <Polyline
                       coordinates={walkingRoute}
@@ -506,7 +726,6 @@ export default function HomeScreen() {
                   )}
                 </MapView>
 
-                {/* Button to re-center the map on the user's location */}
                 {showCenterButton && (
                   <Pressable
                     style={styles.centerButton}
@@ -529,7 +748,6 @@ export default function HomeScreen() {
                   </Pressable>
                 )}
 
-                {/* Button to open the dedicated full map screen */}
                 <Pressable
                   style={styles.fullMapButton}
                   onPress={() => router.push('/full-map')}

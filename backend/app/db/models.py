@@ -12,6 +12,8 @@ class User(Base):
     email = Column(String, nullable=False, unique=True, index=True)
     password_hash = Column(String, nullable=True)
     trust_score = Column(Integer, nullable=False, default=0)
+    mobility_status = Column(String, nullable=False, default="regular")
+    prefer_accessible_route = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -198,3 +200,51 @@ class EmergencyAccessState(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
     )
+
+
+# Stores a navigation session in which a user started heading toward a shelter.
+# This is later used to decide whether to ask for shelter feedback.
+class ShelterVisitSession(Base):
+    __tablename__ = "shelter_visit_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    shelter_id = Column(Integer, nullable=False, index=True)
+    shelter_source = Column(String, nullable=False, index=True)
+    route_started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    feedback_prompted = Column(Boolean, default=False, nullable=False)
+    feedback_prompted_at = Column(DateTime, nullable=True)
+    feedback_submitted = Column(Boolean, default=False, nullable=False)
+    feedback_submitted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# Stores the actual feedback answers submitted by a user about a shelter visit.
+class ShelterFeedback(Base):
+    __tablename__ = "shelter_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # User who submitted the feedback.
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    # Visit session this feedback belongs to.
+    visit_session_id = Column(
+        Integer,
+        ForeignKey("shelter_visit_sessions.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    # Shelter identity at the time of submission.
+    shelter_id = Column(Integer, nullable=False, index=True)
+    shelter_source = Column(String, nullable=False, index=True)
+
+    # Main structured answers.
+    was_open = Column(String, nullable=False)
+    was_accessible = Column(String, nullable=False)
+    condition_rating = Column(String, nullable=False)
+
+    # Timestamp for when the feedback was submitted.
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

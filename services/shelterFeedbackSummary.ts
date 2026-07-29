@@ -5,9 +5,18 @@ export type ShelterFeedbackSummary = {
   shelter_source: string;
   total_feedback_count: number;
 
+  // Historical open-status feedback.
   open_yes_count: number;
   open_partial_count: number;
   open_no_count: number;
+
+  // Open-status feedback submitted during the last 24 hours.
+  recent_open_yes_count: number;
+  recent_open_partial_count: number;
+  recent_open_no_count: number;
+
+  // Timestamp of the newest feedback submitted for this shelter.
+  last_feedback_at: string | null;
 
   accessible_yes_count: number;
   accessible_partial_count: number;
@@ -18,6 +27,7 @@ export type ShelterFeedbackSummary = {
   condition_okay_count: number;
   condition_poor_count: number;
 
+  // Kept temporarily for backward compatibility with existing screens.
   reliability_score: number;
   summary_label: string;
 };

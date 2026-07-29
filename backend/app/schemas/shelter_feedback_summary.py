@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -9,6 +11,14 @@ class ShelterFeedbackSummaryResponse(BaseModel):
     open_yes_count: int
     open_partial_count: int
     open_no_count: int
+
+    # Open-status feedback from the last 24 hours.
+    recent_open_yes_count: int
+    recent_open_partial_count: int
+    recent_open_no_count: int
+
+    # Timestamp of the newest feedback submitted for this shelter.
+    last_feedback_at: datetime | None
 
     accessible_yes_count: int
     accessible_partial_count: int

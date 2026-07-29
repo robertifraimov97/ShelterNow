@@ -1,9 +1,16 @@
-import { SafeAreaView, View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { SafeAreaView, View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import { API_BASE_URL } from '../../constants/api';
+import { useAuth } from '../../context/AuthContext';
+import {
+  getShelterFeedbackSummary,
+  type ShelterFeedbackSummary,
+} from '../../services/shelterFeedbackSummary';
+import { getUserPreferences, type UserPreferences } from '../../services/userPreferences';
+import { createShelterVisitSession } from '../../services/shelterFeedback';
 
 // Represents an official shelter record returned from the backend.
 type OfficialShelter = {
@@ -33,7 +40,14 @@ type NearbyShelter = {
   distance_meters: number;
   estimated_walk_minutes: number;
   source: string;
+  accessibility_notes?: string | null;
 };
+
+type NearbyShelterWithSummary = NearbyShelter & {
+  feedbackSummary?: ShelterFeedbackSummary | null;
+};
+
+type AccessibilityStatus = 'accessible' | 'unclear' | 'possibly_not_accessible';
 
 // Represents the alerts response used to decide whether emergency mode is active.
 type AlertsResponse = {
@@ -65,6 +79,7 @@ function formatDistance(distanceMeters: number) {
 
 export default function MapScreen() {
   const router = useRouter();
+  const { token, isAuthenticated } = useAuth();
 
   // Stores the user's current GPS coordinates.
   const [userLocation, setUserLocation] = useState<{
@@ -85,13 +100,31 @@ export default function MapScreen() {
   const [officialShelters, setOfficialShelters] = useState<OfficialShelter[]>([]);
 
   // Stores the nearby shelters list shown below the map.
-  const [nearbyShelters, setNearbyShelters] = useState<NearbyShelter[]>([]);
+  const [nearbyShelters, setNearbyShelters] = useState<NearbyShelterWithSummary[]>([]);
 
   // Tracks loading state while shelters and location data are being fetched.
   const [loadingShelters, setLoadingShelters] = useState(true);
 
+  // Stores current user preferences when available.
+  const [userPreferences, setUserPreferences] = useState<UserPreferences | null>(null);
+
   // Reference to the MapView so the app can recenter it programmatically.
   const mapRef = useRef<MapView | null>(null);
+
+  const loadUserPreferences = async () => {
+    if (!token || !isAuthenticated) {
+      setUserPreferences(null);
+      return;
+    }
+
+    try {
+      const preferences = await getUserPreferences(token);
+      setUserPreferences(preferences);
+    } catch (error) {
+      console.log('Failed to load user preferences for map screen:', error);
+      setUserPreferences(null);
+    }
+  };
 
   // Loads all official shelters from the backend and keeps only those with coordinates.
   const loadOfficialShelters = async () => {
@@ -128,8 +161,6 @@ export default function MapScreen() {
 
       const data: AlertsResponse = await response.json();
 
-      // Emergency mode is enabled if the alert response indicates
-      // that the current location is affected or shelter guidance should be offered.
       const shouldUseEmergencyShelterFlow =
         data.relevance.current_location_match ||
         data.relevance.show_nearest_shelter_button ||
@@ -146,6 +177,154 @@ export default function MapScreen() {
       setIsEmergencyMode(false);
       return false;
     }
+  };
+
+  const enrichSheltersWithFeedbackSummary = async (
+    shelters: NearbyShelter[]
+  ): Promise<NearbyShelterWithSummary[]> => {
+    const sheltersWithSummaries = await Promise.all(
+      shelters.map(async (shelter) => {
+        try {
+          const summary = await getShelterFeedbackSummary(
+            shelter.source,
+            shelter.id
+          );
+
+          return {
+            ...shelter,
+            feedbackSummary: summary,
+          };
+        } catch (error) {
+          console.log(
+            `Failed to load feedback summary for map shelter ${shelter.id}:`,
+            error
+          );
+
+          return {
+            ...shelter,
+            feedbackSummary: null,
+          };
+        }
+      })
+    );
+
+    return sheltersWithSummaries;
+  };
+
+  const getAccessibilityStatus = (
+    shelter: NearbyShelterWithSummary
+  ): AccessibilityStatus => {
+    const notes = shelter.accessibility_notes?.toLowerCase() || '';
+    const summary = shelter.feedbackSummary;
+
+    const hasPositiveNotes =
+      notes.includes('accessible') ||
+      notes.includes('נגיש');
+
+    const hasNegativeNotes =
+      notes.includes('not accessible') ||
+      notes.includes('לא נגיש');
+
+    if (hasNegativeNotes) {
+      return 'possibly_not_accessible';
+    }
+
+    if (hasPositiveNotes) {
+      return 'accessible';
+    }
+
+    if (!summary || summary.total_feedback_count === 0) {
+      return 'unclear';
+    }
+
+    if (summary.accessible_no_count > summary.accessible_yes_count) {
+      return 'possibly_not_accessible';
+    }
+
+    if (
+      summary.accessible_yes_count > 0 &&
+      summary.accessible_yes_count >= summary.accessible_no_count
+    ) {
+      return 'accessible';
+    }
+
+    if (summary.accessible_partial_count > 0 || summary.accessible_unknown_count > 0) {
+      return 'unclear';
+    }
+
+    return 'unclear';
+  };
+
+  const shouldWarnBeforeNavigation = () => {
+    return Boolean(
+      userPreferences &&
+        (
+          userPreferences.mobility_status === 'limited' ||
+          userPreferences.prefer_accessible_route
+        )
+    );
+  };
+
+  const openNavigation = async (shelter: NearbyShelterWithSummary) => {
+    let visitSessionId: number | null = null;
+
+    try {
+      if (token) {
+        const visitSession = await createShelterVisitSession(
+          token,
+          shelter.id,
+          shelter.source
+        );
+
+        visitSessionId = visitSession.id;
+      }
+    } catch (error) {
+      console.log('Failed to create shelter visit session from map screen:', error);
+    }
+
+    router.push({
+      pathname: '/navigation',
+      params: {
+        name: shelter.name,
+        latitude: String(shelter.latitude),
+        longitude: String(shelter.longitude),
+        source: shelter.source,
+        shelterId: String(shelter.id),
+        visitSessionId: visitSessionId ? String(visitSessionId) : '',
+      },
+    });
+  };
+
+  const handleShelterPress = async (shelter: NearbyShelterWithSummary) => {
+    const accessibilityStatus = getAccessibilityStatus(shelter);
+
+    if (
+      shouldWarnBeforeNavigation() &&
+      accessibilityStatus !== 'accessible'
+    ) {
+      const message =
+        accessibilityStatus === 'possibly_not_accessible'
+          ? 'This shelter may not be fully accessible. Please take this into account before starting navigation.'
+          : 'Accessibility information for this shelter is limited. Please take this into account before starting navigation.';
+
+      Alert.alert(
+        'Accessibility notice',
+        message,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: () => {
+              openNavigation(shelter);
+            },
+          },
+        ]
+      );
+
+      return;
+    }
+
+    await openNavigation(shelter);
   };
 
   // Loads nearby shelter recommendations for the user,
@@ -181,7 +360,8 @@ export default function MapScreen() {
       }
 
       const data: NearbyShelter[] = await response.json();
-      setNearbyShelters(data);
+      const sheltersWithSummaries = await enrichSheltersWithFeedbackSummary(data);
+      setNearbyShelters(sheltersWithSummaries);
     } catch (error) {
       console.log('Failed to load nearby shelters recommendation:', error);
       setNearbyShelters([]);
@@ -190,11 +370,12 @@ export default function MapScreen() {
     }
   };
 
-  // Loads all data needed for the screen:
-  // location, current city, emergency mode, official shelters, and nearby shelters.
+  // Loads all data needed for the screen.
   const loadExploreScreenData = async () => {
     try {
       setLoadingShelters(true);
+
+      await loadUserPreferences();
 
       const { status } = await Location.requestForegroundPermissionsAsync();
 
@@ -241,12 +422,10 @@ export default function MapScreen() {
     }
   };
 
-  // Load screen data once when the component mounts.
   useEffect(() => {
     loadExploreScreenData();
   }, []);
 
-  // Reload the screen data whenever the screen comes back into focus.
   useFocusEffect(
     useCallback(() => {
       loadExploreScreenData();
@@ -256,7 +435,6 @@ export default function MapScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Header section with title and mode-aware subtitle */}
         <View style={styles.header}>
           <Text style={styles.title}>Nearby Protected Areas</Text>
           <Text style={styles.subtitle}>
@@ -266,7 +444,6 @@ export default function MapScreen() {
           </Text>
         </View>
 
-        {/* Map section showing the user location and official shelters */}
         <View style={styles.mapSection}>
           <Text style={styles.mapLabel}>Map View</Text>
 
@@ -298,7 +475,6 @@ export default function MapScreen() {
                     setShowCenterButton(movedAway);
                   }}
                 >
-                  {/* Marker for the user's current location */}
                   <Marker
                     coordinate={{
                       latitude: userLocation.latitude,
@@ -309,7 +485,6 @@ export default function MapScreen() {
                     pinColor="red"
                   />
 
-                  {/* Markers for all official shelters with coordinates */}
                   {officialShelters.map((shelter) => (
                     <Marker
                       key={shelter.id}
@@ -324,7 +499,6 @@ export default function MapScreen() {
                   ))}
                 </MapView>
 
-                {/* Button that re-centers the map on the user's location */}
                 {showCenterButton && (
                   <Pressable
                     style={styles.centerButton}
@@ -347,7 +521,6 @@ export default function MapScreen() {
                   </Pressable>
                 )}
 
-                {/* Button that opens the dedicated full map screen */}
                 <Pressable
                   style={styles.fullMapButton}
                   onPress={() => router.push('/full-map')}
@@ -363,7 +536,6 @@ export default function MapScreen() {
           </View>
         </View>
 
-        {/* Nearby shelters list section */}
         <View style={styles.listSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Nearby Options</Text>
@@ -381,17 +553,7 @@ export default function MapScreen() {
               <Pressable
                 key={`${shelter.source}-${shelter.id}`}
                 style={styles.areaCard}
-                onPress={() =>
-                  router.push({
-                    pathname: '/navigation',
-                    params: {
-                      name: shelter.name,
-                      latitude: String(shelter.latitude),
-                      longitude: String(shelter.longitude),
-                      source: shelter.source,
-                    },
-                  })
-                }
+                onPress={() => handleShelterPress(shelter)}
               >
                 <Text style={styles.areaName}>{shelter.name}</Text>
                 <Text style={styles.areaInfo}>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   SafeAreaView,
   View,
@@ -7,18 +7,83 @@ import {
   ScrollView,
   Pressable,
   Switch,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../context/AuthContext';
+import {
+  getUserPreferences,
+  updateUserPreferences,
+} from '../services/userPreferences';
 
 export default function ProfileSettingsScreen() {
-  // Router instance used to navigate back to the previous screen.
   const router = useRouter();
+  const { token } = useAuth();
 
   // State for the user's selected mobility preference.
   const [mobility, setMobility] = useState<'regular' | 'limited'>('regular');
 
   // State for whether accessible routes should be preferred.
   const [accessibleRoute, setAccessibleRoute] = useState(false);
+
+  // UI state.
+  const [loadingPreferences, setLoadingPreferences] = useState(true);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+
+  useEffect(() => {
+    const loadPreferences = async () => {
+      if (!token) {
+        setLoadingPreferences(false);
+        return;
+      }
+
+      try {
+        setLoadingPreferences(true);
+
+        const preferences = await getUserPreferences(token);
+
+        setMobility(
+          preferences.mobility_status === 'limited' ? 'limited' : 'regular'
+        );
+        setAccessibleRoute(preferences.prefer_accessible_route);
+      } catch (error: any) {
+        Alert.alert(
+          'Error',
+          error.message || 'Failed to load profile preferences.'
+        );
+      } finally {
+        setLoadingPreferences(false);
+      }
+    };
+
+    loadPreferences();
+  }, [token]);
+
+  const handleSavePreferences = async () => {
+    if (!token) {
+      Alert.alert('Error', 'You must be signed in to save preferences.');
+      return;
+    }
+
+    try {
+      setSavingPreferences(true);
+
+      await updateUserPreferences(token, {
+        mobility_status: mobility,
+        prefer_accessible_route: accessibleRoute,
+      });
+
+      Alert.alert('Saved', 'Your preferences were updated successfully.');
+      router.back();
+    } catch (error: any) {
+      Alert.alert(
+        'Error',
+        error.message || 'Failed to save profile preferences.'
+      );
+    } finally {
+      setSavingPreferences(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -45,12 +110,15 @@ export default function ProfileSettingsScreen() {
                 styles.optionButton,
                 mobility === 'regular' && styles.optionButtonActive,
               ]}
-              onPress={() => setMobility('regular')}>
+              onPress={() => setMobility('regular')}
+              disabled={loadingPreferences || savingPreferences}
+            >
               <Text
                 style={[
                   styles.optionText,
                   mobility === 'regular' && styles.optionTextActive,
-                ]}>
+                ]}
+              >
                 Regular mobility
               </Text>
             </Pressable>
@@ -60,12 +128,15 @@ export default function ProfileSettingsScreen() {
                 styles.optionButton,
                 mobility === 'limited' && styles.optionButtonActive,
               ]}
-              onPress={() => setMobility('limited')}>
+              onPress={() => setMobility('limited')}
+              disabled={loadingPreferences || savingPreferences}
+            >
               <Text
                 style={[
                   styles.optionText,
                   mobility === 'limited' && styles.optionTextActive,
-                ]}>
+                ]}
+              >
                 Limited mobility
               </Text>
             </Pressable>
@@ -87,9 +158,27 @@ export default function ProfileSettingsScreen() {
             <Switch
               value={accessibleRoute}
               onValueChange={setAccessibleRoute}
+              disabled={loadingPreferences || savingPreferences}
             />
           </View>
         </View>
+
+        <Pressable
+          style={[
+            styles.saveButton,
+            (loadingPreferences || savingPreferences) && styles.saveButtonDisabled,
+          ]}
+          onPress={handleSavePreferences}
+          disabled={loadingPreferences || savingPreferences}
+        >
+          <Text style={styles.saveButtonText}>
+            {loadingPreferences
+              ? 'Loading...'
+              : savingPreferences
+              ? 'Saving...'
+              : 'Save Preferences'}
+          </Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -190,5 +279,20 @@ const styles = StyleSheet.create({
   switchSubtitle: {
     fontSize: 14,
     color: '#64748B',
+  },
+  saveButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#94A3B8',
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
