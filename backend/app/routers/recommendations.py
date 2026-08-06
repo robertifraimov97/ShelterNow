@@ -10,6 +10,11 @@ from app.schemas.recommendation import (
     BestShelterResponse,
     NearbyShelterResponse,
 )
+from app.services.area_inference import (
+    _debug_trace,
+    get_active_emergency_state,
+    get_eligible_community_shelters,
+)
 from app.services.shelter_ranking import (
     choose_best_shelter_for_user,
     rank_shelters_for_user,
@@ -99,17 +104,21 @@ def get_best_emergency_shelter_recommendation(
     # Fetch all official shelters.
     official_shelters = db.query(Shelter).all()
 
-    # Fetch active community shelters that should be shown during emergencies
-    # and already have usable coordinates.
+    # Community shelters must never be exposed outside a verified, active
+    # Emergency Context — enforced here on the backend using the request's
+    # own coordinates, never the client-supplied current_city string (which
+    # is not a trustworthy security boundary — see area_inference.py).
+    # Missing coordinates or no active window for the derived area silently
+    # falls back to official-only rather than rejecting the request.
+    active_emergency_state = get_active_emergency_state(
+        db, request.user_latitude, request.user_longitude
+    )
+
+    # Centralized candidate-pool policy (area_inference.get_eligible_community_shelters)
+    # — the same pool and the same gate used by every other Community-shelter-
+    # returning path, so this endpoint and Alternative Preview can never diverge.
     community_shelters = (
-        db.query(CommunityShelter)
-        .filter(
-            CommunityShelter.is_active == True,
-            CommunityShelter.show_only_during_emergency == True,
-            CommunityShelter.latitude.isnot(None),
-            CommunityShelter.longitude.isnot(None),
-        )
-        .all()
+        get_eligible_community_shelters(db) if active_emergency_state else []
     )
 
     # Combine official and community shelters into one list for emergency ranking.
@@ -154,17 +163,26 @@ def get_nearby_emergency_shelters_recommendation(
     # Fetch all official shelters.
     official_shelters = db.query(Shelter).all()
 
-    # Fetch active community shelters that are emergency-only
-    # and have valid coordinates.
+    # Community shelters must never be exposed outside a verified, active
+    # Emergency Context — enforced here using the request's own coordinates,
+    # never the client-supplied current_city string. See best-emergency-shelter
+    # above and area_inference.py for the full rationale.
+    active_emergency_state = get_active_emergency_state(
+        db, request.user_latitude, request.user_longitude
+    )
+
+    # Centralized candidate-pool policy — see best-emergency-shelter above.
     community_shelters = (
-        db.query(CommunityShelter)
-        .filter(
-            CommunityShelter.is_active == True,
-            CommunityShelter.show_only_during_emergency == True,
-            CommunityShelter.latitude.isnot(None),
-            CommunityShelter.longitude.isnot(None),
-        )
-        .all()
+        get_eligible_community_shelters(db) if active_emergency_state else []
+    )
+
+    # TEMP DIAGNOSTIC LOGGING -- to be removed after diagnosis is confirmed.
+    _debug_trace(
+        "nearby_emergency_shelters_pool",
+        latitude=request.user_latitude,
+        longitude=request.user_longitude,
+        official_count=len(official_shelters),
+        community_count=len(community_shelters),
     )
 
     # Combine all eligible shelters into one list for emergency ranking.
@@ -180,6 +198,18 @@ def get_nearby_emergency_shelters_recommendation(
     # Clamp the number of returned shelters to a safe range.
     safe_limit = max(1, min(request.limit, 50))
     top_shelters = ranked_shelters[:safe_limit]
+
+    # TEMP DIAGNOSTIC LOGGING -- to be removed after diagnosis is confirmed.
+    _debug_trace(
+        "nearby_emergency_shelters_result",
+        top_5=[
+            (
+                "Community" if isinstance(item["shelter"], CommunityShelter) else "Official",
+                item["distance_meters"],
+            )
+            for item in top_shelters[:5]
+        ],
+    )
 
     # Return the top-ranked nearby emergency shelters,
     # marking each one by its source type.

@@ -281,6 +281,19 @@ export default function SheltersListScreen() {
   // Indicates whether the current location is in emergency mode.
   const [isEmergencyMode, setIsEmergencyMode] = useState(false);
 
+  // Stores the detected current city name, kept for display/backward
+  // compatibility only — see userLocation below for what actually gates
+  // Emergency Mode / Journey creation server-side.
+  const [currentCity, setCurrentCity] = useState<string | null>(null);
+
+  // Stores the user's latest known coordinates, so openNavigation can send
+  // them when creating a Visit Session (the backend derives Emergency
+  // Context from these, never from currentCity).
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+
   // Stores current user preferences when available.
   const [userPreferences, setUserPreferences] =
     useState<UserPreferences | null>(null);
@@ -399,6 +412,7 @@ export default function SheltersListScreen() {
     shelter: NearbyShelterWithSummary
   ) => {
     let visitSessionId: number | null = null;
+    let journeyId: number | null = null;
 
     try {
       if (token) {
@@ -406,10 +420,14 @@ export default function SheltersListScreen() {
           await createShelterVisitSession(
             token,
             shelter.id,
-            shelter.source
+            shelter.source,
+            userLocation?.latitude ?? null,
+            userLocation?.longitude ?? null,
+            currentCity
           );
 
         visitSessionId = visitSession.id;
+        journeyId = visitSession.journey_id ?? null;
       }
     } catch (error) {
       console.log(
@@ -429,6 +447,7 @@ export default function SheltersListScreen() {
         visitSessionId: visitSessionId
           ? String(visitSessionId)
           : '',
+        journeyId: journeyId ? String(journeyId) : '',
       },
     });
   };
@@ -494,6 +513,11 @@ export default function SheltersListScreen() {
       const location =
         await Location.getCurrentPositionAsync({});
 
+      setUserLocation({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+
       let cityName: string | null = null;
 
       try {
@@ -519,6 +543,8 @@ export default function SheltersListScreen() {
         );
       }
 
+      setCurrentCity(cityName);
+
       const useEmergencyMode =
         await loadAlertsState(cityName);
 
@@ -537,6 +563,9 @@ export default function SheltersListScreen() {
           user_longitude:
             location.coords.longitude,
           limit: 10,
+          // Only meaningful to the emergency-shelters endpoint, which
+          // validates it server-side before including Community shelters.
+          current_city: cityName,
         }),
       });
 

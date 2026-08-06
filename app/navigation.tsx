@@ -1,9 +1,18 @@
-import { SafeAreaView, View, Text, Pressable } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Location from 'expo-location';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
+import { Pressable, SafeAreaView, Text, View } from 'react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+import AlternativeShelterPreviewModal, {
+  type AlternativeShelterPreviewData,
+} from '../components/AlternativeShelterPreviewModal';
 import { API_BASE_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
+import {
+  AlternativeShelterServiceError,
+  getAlternativePreview,
+} from '../services/alternativeShelter';
 import { styles } from '../styles/home.styles';
 
 // Represents a single coordinate point in the route path.
@@ -70,6 +79,7 @@ function calculateDistanceMeters(
 export default function NavigationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { token } = useAuth();
 
   // Extract shelter data passed through route params.
   const shelterName = String(params.name || '');
@@ -78,6 +88,15 @@ export default function NavigationScreen() {
   const shelterSource = String(params.source || 'Official');
   const shelterId = Number(params.shelterId);
   const visitSessionId = Number(params.visitSessionId);
+  const journeyId = Number(params.journeyId);
+
+  // The authoritative capability from GET /shelter-journeys/active,
+  // forwarded in as a route param by whichever screen navigated here (Home,
+  // or Accept Alternative). Never inferred from journeyId alone: a Journey
+  // can exist while the CURRENT coordinates no longer verify an active
+  // Emergency Context, in which case Alternative must stay unavailable even
+  // though journeyId is valid.
+  const canRequestAlternative = params.canRequestAlternative === 'true';
 
   // Determine visual behavior based on whether the destination is a community shelter.
   const isCommunityShelter = shelterSource === 'Community';
@@ -99,6 +118,17 @@ export default function NavigationScreen() {
   const [routeDuration, setRouteDuration] = useState<number | null>(null);
   const [instructions, setInstructions] = useState<RouteInstruction[]>([]);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+  const [isNearShelter, setIsNearShelter] = useState(false);
+
+  // Tracks the in-progress alternative-shelter search triggered from this screen.
+  const [isFindingAlternative, setIsFindingAlternative] = useState(false);
+  const [alternativeShelterError, setAlternativeShelterError] = useState('');
+
+  // The alternative-shelter preview is local UI state (a Modal), never a
+  // routed screen — opening/closing it must never touch the navigation stack.
+  const [alternativePreview, setAlternativePreview] =
+    useState<AlternativeShelterPreviewData | null>(null);
+  const [isAlternativePreviewVisible, setIsAlternativePreviewVisible] = useState(false);
 
   // Ref to control the map programmatically.
   const mapRef = useRef<MapView | null>(null);
@@ -111,6 +141,7 @@ export default function NavigationScreen() {
 
   const hasValidVisitSessionId =
     Number.isFinite(visitSessionId) && visitSessionId > 0;
+  const hasValidJourneyId = Number.isFinite(journeyId) && journeyId > 0;
 
   // Requests a walking route from the backend routing endpoint.
   const loadWalkingRoute = async (
@@ -165,20 +196,113 @@ export default function NavigationScreen() {
     }
   };
 
-  const handleOpenShelterFeedback = () => {
+  const handleArrivalPress = () => {
     if (!hasValidVisitSessionId) {
       return;
     }
 
     router.push({
-      pathname: '/shelter-feedback',
+      pathname: '/shelter-arrival',
       params: {
         visitSessionId: String(visitSessionId),
         shelterName,
         shelterId: String(shelterId),
         shelterSource,
+        journeyId: hasValidJourneyId ? String(journeyId) : '',
+        canRequestAlternative: String(canRequestAlternative),
       },
     });
+  };
+
+  const handleFindAlternativeShelter = async () => {
+    if (isFindingAlternative) {
+      return;
+    }
+
+    if (!hasValidJourneyId || !canRequestAlternative) {
+      // A missing journeyId or a Journey whose current coordinates don't
+      // verify an active Emergency Context are both normal, expected states
+      // — not necessarily a bug. This button is already hidden in both
+      // cases (see the render condition below); still guarded here
+      // defensively in case it's ever reached some other way, and logged
+      // for diagnosis.
+      console.log(
+        '[navigation] Alternative not currently available.',
+        { rawJourneyId: params.journeyId, canRequestAlternative }
+      );
+      setAlternativeShelterError('האפשרות הזו זמינה רק במצב חירום.');
+      return;
+    }
+
+    if (!token) {
+      return;
+    }
+
+    try {
+      setIsFindingAlternative(true);
+      setAlternativeShelterError('');
+
+      const { status: locationStatus } =
+        await Location.requestForegroundPermissionsAsync();
+
+      if (locationStatus !== 'granted') {
+        setAlternativeShelterError('לא הצלחנו לבדוק חלופה כרגע. נסה שוב.');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+
+      const preview = await getAlternativePreview(
+        token,
+        journeyId,
+        location.coords.latitude,
+        location.coords.longitude
+      );
+
+      if (preview.status === 'unavailable') {
+        setAlternativeShelterError('לא נמצאה כרגע חלופה נוספת באזור');
+        return;
+      }
+
+      // Show the comparison in a local Modal and let the user decide — never
+      // navigate automatically, and never push a route for this: opening the
+      // preview must not affect the navigation stack.
+      setAlternativePreview({
+        currentShelterName: preview.currentShelter.name,
+        currentDistanceMeters: preview.currentShelter.estimatedDistanceMeters,
+        currentWalkMinutes: preview.currentShelter.estimatedWalkMinutes,
+        altShelterId: preview.recommendedAlternative.id,
+        altShelterSource: preview.recommendedAlternative.source,
+        altShelterName: preview.recommendedAlternative.name,
+        altLatitude: preview.recommendedAlternative.latitude,
+        altLongitude: preview.recommendedAlternative.longitude,
+        altDistanceMeters: preview.recommendedAlternative.estimatedDistanceMeters,
+        altWalkMinutes: preview.recommendedAlternative.estimatedWalkMinutes,
+        additionalDistanceMeters: preview.comparison.additionalEstimatedDistanceMeters,
+        additionalWalkMinutes: preview.comparison.additionalEstimatedWalkMinutes,
+      });
+      setIsAlternativePreviewVisible(true);
+    } catch (error) {
+      const technicalMessage =
+        error instanceof AlternativeShelterServiceError
+          ? error.message
+          : String(error);
+      console.log('Failed to load alternative shelter preview:', technicalMessage, error);
+      setAlternativeShelterError('לא הצלחנו לבדוק חלופה כרגע. נסה שוב.');
+    } finally {
+      setIsFindingAlternative(false);
+    }
+  };
+
+  const updateProximityState = (latitude: number, longitude: number) => {
+    const distanceToShelter = calculateDistanceMeters(
+      latitude,
+      longitude,
+      shelterLatitude,
+      shelterLongitude
+    );
+
+    setIsNearShelter(distanceToShelter <= 40);
   };
 
   useEffect(() => {
@@ -202,6 +326,10 @@ export default function NavigationScreen() {
       };
 
       setUserLocation(initialUserLocation);
+      updateProximityState(
+        initialUserLocation.latitude,
+        initialUserLocation.longitude
+      );
 
       // Load the initial route from the current location to the shelter.
       await loadWalkingRoute(
@@ -225,6 +353,10 @@ export default function NavigationScreen() {
           };
 
           setUserLocation(updatedLocation);
+          updateProximityState(
+            updatedLocation.latitude,
+            updatedLocation.longitude
+          );
 
           const lastRerouteLocation = lastRerouteLocationRef.current;
 
@@ -295,7 +427,19 @@ export default function NavigationScreen() {
           <Text style={styles.subtitle}>Walk safely to your selected shelter</Text>
         </View>
 
-        {/* Main route summary card */}
+        {/*
+          Main route summary card.
+
+          Extension point: a future explicit Journey action such as "שנה
+          יעד" (change destination, already effectively available via the
+          "מצא לי מקלט חלופי" button below) or "חזור ליעד קודם" (revert to
+          previous destination — backend already tracks
+          previous_visit_session_id, see AlternativeShelterPreviewModal and
+          accept_alternative) would live here as its own action, calling a
+          dedicated Journey endpoint. It must never be modeled as
+          router.back()/browser Back — the Journey, not navigation history,
+          is the source of truth for "what was I heading to before".
+        */}
         <View style={styles.mainCard}>
           <Text style={styles.cardTitle}>Destination</Text>
           <Text style={styles.cardName}>{shelterName || 'Shelter'}</Text>
@@ -315,26 +459,129 @@ export default function NavigationScreen() {
           </Text>
 
           {hasValidVisitSessionId && (
-            <Pressable
-              style={{
-                marginTop: 14,
-                backgroundColor: '#2563EB',
-                borderRadius: 14,
-                paddingVertical: 14,
-                alignItems: 'center',
-              }}
-              onPress={handleOpenShelterFeedback}
-            >
-              <Text
+            <View style={{ marginTop: 14, gap: 10 }}>
+              {isNearShelter && (
+                <Pressable
+                  onPress={handleArrivalPress}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                    backgroundColor: '#ECFDF3',
+                    borderWidth: 1.5,
+                    borderColor: '#86EFAC',
+                    borderRadius: 14,
+                    paddingVertical: 12,
+                    paddingHorizontal: 14,
+                  }}
+                >
+                  <Ionicons name="location" size={24} color="#15803D" />
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        color: '#14532D',
+                        fontSize: 15,
+                        fontWeight: '800',
+                        textAlign: 'right',
+                      }}
+                    >
+                      נראה שהגעת למקלט
+                    </Text>
+                    <Text
+                      style={{
+                        color: '#166534',
+                        fontSize: 13,
+                        fontWeight: '500',
+                        marginTop: 2,
+                        textAlign: 'right',
+                      }}
+                    >
+                      לחץ כאן כדי לבדוק אם הצלחת להיכנס
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-back" size={20} color="#15803D" />
+                </Pressable>
+              )}
+
+              <Pressable
                 style={{
-                  color: '#FFFFFF',
-                  fontSize: 15,
-                  fontWeight: '700',
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: 8,
+                  backgroundColor: '#2563EB',
+                  borderRadius: 14,
+                  paddingVertical: 15,
                 }}
+                onPress={handleArrivalPress}
               >
-                Report Shelter Experience
-              </Text>
-            </Pressable>
+                <Ionicons
+                  name="checkmark-circle-outline"
+                  size={22}
+                  color="#FFFFFF"
+                />
+                <Text
+                  style={{
+                    color: '#FFFFFF',
+                    fontSize: 16,
+                    fontWeight: '800',
+                  }}
+                >
+                  הגעתי למקלט
+                </Text>
+              </Pressable>
+
+              {hasValidJourneyId && canRequestAlternative && (
+                <>
+                  <Pressable
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      gap: 8,
+                      backgroundColor: '#FFFFFF',
+                      borderWidth: 1.5,
+                      borderColor: '#94A3B8',
+                      borderRadius: 14,
+                      paddingVertical: 14,
+                      opacity: isFindingAlternative ? 0.7 : 1,
+                    }}
+                    onPress={handleFindAlternativeShelter}
+                    disabled={isFindingAlternative}
+                  >
+                    <Ionicons
+                      name="swap-horizontal"
+                      size={22}
+                      color="#334155"
+                    />
+                    <Text
+                      style={{
+                        color: '#334155',
+                        fontSize: 15,
+                        fontWeight: '800',
+                      }}
+                    >
+                      {isFindingAlternative
+                        ? 'בודקים חלופה מתאימה...'
+                        : 'מצא לי מקלט חלופי'}
+                    </Text>
+                  </Pressable>
+
+                  {alternativeShelterError ? (
+                    <Text
+                      style={{
+                        color: '#B91C1C',
+                        fontSize: 13,
+                        fontWeight: '600',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {alternativeShelterError}
+                    </Text>
+                  ) : null}
+                </>
+              )}
+            </View>
           )}
         </View>
 
@@ -505,6 +752,17 @@ export default function NavigationScreen() {
           </View>
         </View>
       </View>
+
+      <AlternativeShelterPreviewModal
+        visible={isAlternativePreviewVisible}
+        journeyId={journeyId}
+        preview={alternativePreview}
+        onClose={() => setIsAlternativePreviewVisible(false)}
+        onLocationUnavailable={() =>
+          setAlternativeShelterError('לא הצלחנו לאמת את המיקום הנוכחי. היעד הנוכחי נשמר.')
+        }
+        canRequestAlternative={canRequestAlternative}
+      />
     </SafeAreaView>
   );
 }

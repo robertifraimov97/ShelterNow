@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { styles } from '../../styles/home.styles';
 import { API_BASE_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
+import { getActiveJourney } from '../../services/alternativeShelter';
 import { createShelterVisitSession } from '../../services/shelterFeedback';
 import {
   getShelterFeedbackSummary,
@@ -252,6 +253,27 @@ export default function HomeScreen() {
   // Explains why the current shelter was selected.
   const [recommendationReason, setRecommendationReason] = useState<string | null>(null);
 
+  // When bestShelter reflects an active Journey (the source of truth) rather
+  // than a freshly computed recommendation, these identify it so
+  // handleStartRoute can resume the existing Journey instead of starting a
+  // new one. Null when bestShelter is a fresh recommendation.
+  const [activeJourneyId, setActiveJourneyId] = useState<number | null>(null);
+  const [activeVisitSessionId, setActiveVisitSessionId] = useState<number | null>(null);
+
+  // The authoritative capability from the Journey's own GET
+  // /shelter-journeys/active check — forwarded into /navigation so it never
+  // has to infer whether Alternative is currently authorized from journeyId
+  // alone (a Journey can be valid while current coordinates don't verify an
+  // active Emergency Context).
+  const [activeJourneyCanRequestAlternative, setActiveJourneyCanRequestAlternative] =
+    useState(false);
+
+  // Calm, user-facing message shown when starting a route fails. Starting a
+  // route must never silently navigate to /navigation with blank ids on
+  // failure — that hides both the arrival and alternative actions with no
+  // explanation.
+  const [startRouteError, setStartRouteError] = useState<string | null>(null);
+
   // Stores the polyline points for the walking route to the best shelter.
   const [walkingRoute, setWalkingRoute] = useState<RoutePoint[]>([]);
 
@@ -261,8 +283,28 @@ export default function HomeScreen() {
   // Tracks whether route start is currently being prepared.
   const [startingRoute, setStartingRoute] = useState(false);
 
+  // True when GET /shelter-journeys/active reported outcome ==
+  // "location_unavailable" for the currently-displayed Journey shelter —
+  // drives a calm, secondary notice. The Journey/destination stay exactly
+  // as before; only this advisory flag changes.
+  const [isJourneyLocationUnavailable, setIsJourneyLocationUnavailable] = useState(false);
+
+  // True when the currently-displayed shelter's distance/walk-time could
+  // not be computed at all (no usable coordinates) — drives a neutral
+  // "distance will update" fallback instead of a misleading 0m/0min value.
+  const [isBestShelterDistanceUnavailable, setIsBestShelterDistanceUnavailable] = useState(false);
+
   // Reference to the map, used for animating back to the user's location.
   const mapRef = useRef<MapView | null>(null);
+
+  // Incremented at the start of every loadHomeScreenData() call. Any async
+  // result (active-Journey check, normal recommendation fetch) only applies
+  // its setState calls if its own captured generation still matches this
+  // ref's current value by the time it resolves — otherwise a newer load
+  // has already started and this result is stale. This is what prevents an
+  // older, slow normal-recommendation response from overwriting a newer
+  // load's active-Journey shelter (or vice versa) on rapid focus/reload.
+  const loadGenerationRef = useRef(0);
 
   const loadUserPreferences = async () => {
     if (!token || !isAuthenticated) {
@@ -364,12 +406,17 @@ export default function HomeScreen() {
     return sheltersWithSummaries;
   };
 
-  // Loads nearby shelters and then chooses the recommended one based on preferences.
+  // Loads nearby shelters and then chooses the recommended one based on
+  // preferences. `generation` guards against this response landing after a
+  // newer load has already started (e.g. one that found an active Journey)
+  // — see loadGenerationRef.
   const loadRecommendedShelter = async (
     latitude: number,
     longitude: number,
     useEmergencyMode: boolean,
-    preferences: UserPreferences | null
+    preferences: UserPreferences | null,
+    cityName: string | null,
+    generation: number
   ) => {
     try {
       setLoadingBestShelter(true);
@@ -387,8 +434,17 @@ export default function HomeScreen() {
           user_latitude: latitude,
           user_longitude: longitude,
           limit: 10,
+          // Only meaningful to the emergency-shelters endpoint, which
+          // validates it server-side before including Community shelters.
+          current_city: cityName,
         }),
       });
+
+      if (generation !== loadGenerationRef.current) {
+        // A newer load has already started -- discard this stale response
+        // without touching any state.
+        return;
+      }
 
       if (!response.ok) {
         console.log('Failed to load nearby shelters for recommendation');
@@ -400,6 +456,10 @@ export default function HomeScreen() {
       const data: NearbyShelter[] = await response.json();
       const sheltersWithSummaries = await enrichSheltersWithFeedbackSummary(data);
 
+      if (generation !== loadGenerationRef.current) {
+        return;
+      }
+
       const recommendation = chooseRecommendedShelter(
         sheltersWithSummaries,
         preferences
@@ -409,11 +469,115 @@ export default function HomeScreen() {
       setRecommendationReason(recommendation.recommendationReason);
     } catch (error) {
       console.log('Failed to load recommended shelter:', error);
+
+      if (generation === loadGenerationRef.current) {
+        setBestShelter(null);
+        setRecommendationReason(null);
+      }
+    } finally {
+      if (generation === loadGenerationRef.current) {
+        setLoadingBestShelter(false);
+      }
+    }
+  };
+
+  // The Journey is the source of truth for the user's active destination.
+  // Checked on every load regardless of whether GPS succeeded this time —
+  // a missing/failed location must never skip this check, only limit what
+  // it can currently authorize (see the "location_unavailable" branch).
+  //
+  // - outcome "applicable" or "location_unavailable": the Journey's current
+  //   shelter is the source of truth. Displayed as-is, journeyId/
+  //   visitSessionId preserved, and the function returns without ever
+  //   running the normal recommendation flow — a fresh recommendation must
+  //   never overwrite an existing Journey's destination.
+  // - outcome "no_active_journey": any stale Journey state is cleared and
+  //   the normal recommendation flow runs (official-only in this mode).
+  //
+  // latitude/longitude may be null (GPS unavailable) — passed straight
+  // through to getActiveJourney rather than skipping the call.
+  const loadBestShelterForHome = async (
+    latitude: number | null,
+    longitude: number | null,
+    useEmergencyMode: boolean,
+    preferences: UserPreferences | null,
+    cityName: string | null,
+    generation: number
+  ) => {
+    if (token && isAuthenticated) {
+      try {
+        const activeJourney = await getActiveJourney(token, latitude, longitude);
+
+        if (generation !== loadGenerationRef.current) {
+          return;
+        }
+
+        if (activeJourney.outcome === 'applicable' || activeJourney.outcome === 'location_unavailable') {
+          const distanceKnown =
+            activeJourney.shelter.estimatedDistanceMeters !== null &&
+            activeJourney.shelter.estimatedWalkMinutes !== null;
+
+          setActiveJourneyId(activeJourney.journeyId);
+          setActiveVisitSessionId(activeJourney.visitSessionId);
+          setActiveJourneyCanRequestAlternative(activeJourney.capabilities.canRequestAlternative);
+          setIsJourneyLocationUnavailable(activeJourney.outcome === 'location_unavailable');
+          setIsBestShelterDistanceUnavailable(!distanceKnown);
+          setBestShelter({
+            id: activeJourney.shelter.id,
+            name: activeJourney.shelter.name,
+            city: activeJourney.shelter.city,
+            address: activeJourney.shelter.address,
+            latitude: activeJourney.shelter.latitude,
+            longitude: activeJourney.shelter.longitude,
+            // Placeholder when unknown — never rendered directly; the
+            // render checks isBestShelterDistanceUnavailable first and
+            // shows a neutral fallback instead of this number.
+            distance_meters: activeJourney.shelter.estimatedDistanceMeters ?? 0,
+            estimated_walk_minutes: activeJourney.shelter.estimatedWalkMinutes ?? 0,
+            source: activeJourney.shelter.source,
+          });
+          setRecommendationReason(null);
+          setLoadingBestShelter(false);
+          return;
+        }
+
+        // outcome === 'no_active_journey': fall through below to clear any
+        // stale Journey state and run the normal recommendation flow.
+      } catch (error) {
+        console.log(
+          'Failed to check for an active journey on home screen:',
+          error
+        );
+        // Fall through to the normal recommendation flow below.
+      }
+    }
+
+    if (generation !== loadGenerationRef.current) {
+      return;
+    }
+
+    setActiveJourneyId(null);
+    setActiveVisitSessionId(null);
+    setActiveJourneyCanRequestAlternative(false);
+    setIsJourneyLocationUnavailable(false);
+    setIsBestShelterDistanceUnavailable(false);
+
+    if (latitude === null || longitude === null) {
+      // No Journey to display and no usable location to recommend from.
       setBestShelter(null);
       setRecommendationReason(null);
-    } finally {
       setLoadingBestShelter(false);
+      return;
     }
+
+    await loadRecommendedShelter(
+      latitude,
+      longitude,
+      useEmergencyMode,
+      preferences,
+      cityName,
+      generation
+    );
   };
 
   // Loads the walking route from the user's location to the selected shelter.
@@ -451,109 +615,281 @@ export default function HomeScreen() {
     }
   };
 
-  // Loads all main screen data.
+  // Loads all main screen data. A GPS failure never skips the active-Journey
+  // check (see loadBestShelterForHome) — it only means coords/cityName stay
+  // null, which the rest of this function already handles gracefully.
   const loadHomeScreenData = async () => {
+    const generation = ++loadGenerationRef.current;
+
     try {
       setLoadingBestShelter(true);
 
       await loadUserPreferences();
 
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      let coords: { latitude: number; longitude: number } | null = null;
 
-      if (status !== 'granted') {
-        console.log('Location permission was denied');
-        setLoadingBestShelter(false);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({});
+          coords = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          };
+        } else {
+          console.log('Location permission was denied');
+        }
+      } catch (error) {
+        console.log('Failed to obtain current location for home screen:', error);
+      }
+
+      if (generation !== loadGenerationRef.current) {
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({});
-
-      const coords = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      };
-
       console.log('User location:', coords);
-
       setUserLocation(coords);
 
       let cityName: string | null = null;
 
-      try {
-        const reverseGeocoded = await Location.reverseGeocodeAsync(coords);
+      if (coords) {
+        try {
+          const reverseGeocoded = await Location.reverseGeocodeAsync(coords);
 
-        if (reverseGeocoded.length > 0) {
-          const place = reverseGeocoded[0];
-          cityName = place.city || place.subregion || place.region || null;
+          if (reverseGeocoded.length > 0) {
+            const place = reverseGeocoded[0];
+            cityName = place.city || place.subregion || place.region || null;
+          }
+        } catch (error) {
+          console.log('Failed to reverse geocode current city for home screen:', error);
         }
-      } catch (error) {
-        console.log('Failed to reverse geocode current city for home screen:', error);
+      }
+
+      if (generation !== loadGenerationRef.current) {
+        return;
       }
 
       setCurrentCity(cityName);
 
       const emergencyMode = await resolveEmergencyMode(cityName);
 
+      if (generation !== loadGenerationRef.current) {
+        return;
+      }
+
       const preferences = token && isAuthenticated
         ? await getUserPreferences(token).catch(() => null)
         : null;
+
+      if (generation !== loadGenerationRef.current) {
+        return;
+      }
 
       setUserPreferences(preferences);
 
       await Promise.all([
         loadOfficialShelters(),
-        loadRecommendedShelter(
-          coords.latitude,
-          coords.longitude,
+        // Always run, regardless of whether coords are available — see the
+        // function's own comment for why a missing location must never
+        // skip this check.
+        loadBestShelterForHome(
+          coords?.latitude ?? null,
+          coords?.longitude ?? null,
           emergencyMode,
-          preferences
+          preferences,
+          cityName,
+          generation
         ),
       ]);
     } catch (error) {
       console.log('Failed to load home screen data:', error);
-      setBestShelter(null);
-      setRecommendationReason(null);
-      setLoadingBestShelter(false);
+
+      if (generation === loadGenerationRef.current) {
+        setBestShelter(null);
+        setRecommendationReason(null);
+        setLoadingBestShelter(false);
+      }
     }
   };
 
-  // Creates a visit session for authenticated users and opens navigation.
+  // Opens navigation. If bestShelter reflects an already-active Journey,
+  // resumes it directly instead of starting a new Journey/Visit Session —
+  // the Journey is the source of truth and must not be duplicated just
+  // because the user returned to Home.
   const handleStartRoute = async () => {
+    // TEMP DIAGNOSTIC LOGGING -- to be removed after root cause is found.
+    console.log('[TEMP][handleStartRoute] press', {
+      bestShelter,
+      startingRoute,
+      activeJourneyId,
+      activeVisitSessionId,
+      tokenPresent: Boolean(token),
+      userLocation,
+    });
+
     if (!bestShelter || startingRoute) {
+      console.log('[TEMP][handleStartRoute] early return: !bestShelter || startingRoute', {
+        bestShelterIsNull: !bestShelter,
+        startingRoute,
+      });
       return;
     }
 
-    let visitSessionId: number | null = null;
+    setStartRouteError(null);
+
+    if (activeJourneyId && activeVisitSessionId) {
+      console.log('[TEMP][handleStartRoute] taking RESUME branch (activeJourneyId && activeVisitSessionId)', {
+        activeJourneyId,
+        activeVisitSessionId,
+      });
+      router.push({
+        pathname: '/navigation',
+        params: {
+          name: bestShelter.name,
+          latitude: String(bestShelter.latitude),
+          longitude: String(bestShelter.longitude),
+          source: bestShelter.source,
+          shelterId: String(bestShelter.id),
+          visitSessionId: String(activeVisitSessionId),
+          journeyId: String(activeJourneyId),
+          canRequestAlternative: String(activeJourneyCanRequestAlternative),
+        },
+      });
+      return;
+    }
+
+    console.log('[TEMP][handleStartRoute] taking CREATE branch', {
+      tokenPresent: Boolean(token),
+      bestShelterId: bestShelter.id,
+      bestShelterSource: bestShelter.source,
+      userLatitude: userLocation?.latitude ?? null,
+      userLongitude: userLocation?.longitude ?? null,
+      currentCity,
+    });
 
     try {
       setStartingRoute(true);
 
+      // No pre-flight re-check here: POST /shelter-feedback/visit-sessions
+      // already resolves "does an active Journey exist for this user"
+      // atomically on the backend (see get_or_create_initial_visit_session /
+      // _resolve_or_create_active_journey) and its response already
+      // reflects that reality regardless of Home's local state. Adding a
+      // separate GET /shelter-journeys/active call here first only added a
+      // second required network round-trip to every normal-mode press for
+      // no benefit the create call didn't already provide, which made this
+      // action strictly less reliable. Home's own useFocusEffect already
+      // keeps activeJourneyId/activeVisitSessionId current for normal,
+      // single-device usage (the branch above), which is the case this
+      // extra call was trying to protect.
+      let visitSessionId: number | null = null;
+      let journeyId: number | null = null;
+      // Real value for a newly-created/attached Journey, looked up below.
+      // Defaults to false (Alternative hidden) whenever journey_id is null,
+      // or the lookup fails/is skipped -- never inferred, never assumed true.
+      let canRequestAlternativeForNewSession = false;
+
       if (token) {
+        console.log('[TEMP][handleStartRoute] calling createShelterVisitSession with', {
+          shelterId: bestShelter.id,
+          shelterSource: bestShelter.source,
+          latitude: userLocation?.latitude ?? null,
+          longitude: userLocation?.longitude ?? null,
+          currentCity,
+        });
+
         const visitSession = await createShelterVisitSession(
           token,
           bestShelter.id,
-          bestShelter.source
+          bestShelter.source,
+          userLocation?.latitude ?? null,
+          userLocation?.longitude ?? null,
+          currentCity
         );
 
+        console.log('[TEMP][handleStartRoute] createShelterVisitSession resolved with', visitSession);
+
         visitSessionId = visitSession.id;
+        journeyId = visitSession.journey_id ?? null;
+
+        console.log('[TEMP][handleStartRoute] parsed ids', { visitSessionId, journeyId });
+
+        // journey_id null -> normal mode, canRequestAlternativeForNewSession
+        // stays false, no lookup needed. journey_id numeric -> the create
+        // call just created or attached to a real Journey; look up its
+        // authoritative capability. This is a post-flight call (after the
+        // session already exists), never a pre-flight gate on navigation --
+        // if it fails, we still navigate below with the valid
+        // visitSessionId, only defaulting Alternative to hidden.
+        if (journeyId) {
+          try {
+            const freshActiveJourney = await getActiveJourney(
+              token,
+              userLocation?.latitude ?? null,
+              userLocation?.longitude ?? null
+            );
+
+            canRequestAlternativeForNewSession =
+              (freshActiveJourney.outcome === 'applicable' ||
+                freshActiveJourney.outcome === 'location_unavailable') &&
+              freshActiveJourney.capabilities.canRequestAlternative;
+          } catch (error) {
+            console.log(
+              'Failed to look up Alternative capability for the new visit session (non-blocking):',
+              error
+            );
+            // canRequestAlternativeForNewSession stays false -- navigation
+            // still proceeds below with the real visitSessionId/journeyId.
+          }
+        }
+      } else {
+        console.log('[TEMP][handleStartRoute] token is falsy -- skipping createShelterVisitSession entirely');
       }
+
+      console.log('[TEMP][handleStartRoute] about to router.push with', {
+        visitSessionId,
+        journeyId,
+        visitSessionIdTruthy: Boolean(visitSessionId),
+        journeyIdTruthy: Boolean(journeyId),
+        finalVisitSessionIdParam: visitSessionId ? String(visitSessionId) : '',
+        finalJourneyIdParam: journeyId ? String(journeyId) : '',
+      });
+
+      // Only ever reached on success -- never navigate to /navigation with
+      // blank ids on failure (see the catch block below). A blank
+      // visitSessionId hides both the arrival and alternative actions on
+      // the destination screen with no explanation.
+      router.push({
+        pathname: '/navigation',
+        params: {
+          name: bestShelter.name,
+          latitude: String(bestShelter.latitude),
+          longitude: String(bestShelter.longitude),
+          source: bestShelter.source,
+          shelterId: String(bestShelter.id),
+          visitSessionId: visitSessionId ? String(visitSessionId) : '',
+          journeyId: journeyId ? String(journeyId) : '',
+          canRequestAlternative: String(canRequestAlternativeForNewSession),
+        },
+      });
     } catch (error) {
       console.log('Failed to create shelter visit session:', error);
+      console.log('[TEMP][handleStartRoute] CAUGHT ERROR - full detail', {
+        error,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        // If services/shelterFeedback.ts's createShelterVisitSession threw
+        // because response.ok was false, error.message IS the raw response
+        // body text (see that function) -- there is no separate HTTP status
+        // captured today, only visible here as part of the message if the
+        // backend included it.
+      });
+      setStartRouteError('לא הצלחנו להתחיל ניווט כרגע. נסה שוב.');
     } finally {
       setStartingRoute(false);
     }
-
-    router.push({
-      pathname: '/navigation',
-      params: {
-        name: bestShelter.name,
-        latitude: String(bestShelter.latitude),
-        longitude: String(bestShelter.longitude),
-        source: bestShelter.source,
-        shelterId: String(bestShelter.id),
-        visitSessionId: visitSessionId ? String(visitSessionId) : '',
-      },
-    });
   };
 
   // Initial screen data load when the component mounts.
@@ -562,10 +898,21 @@ export default function HomeScreen() {
   }, []);
 
   // Reloads the screen data whenever the screen becomes focused again.
+  //
+  // Depends on [token, isAuthenticated]: with an empty dependency array this
+  // callback is memoized exactly once, on the first render -- permanently
+  // closing over that render's token/isAuthenticated (both still null/false,
+  // since AuthContext loads the token from storage asynchronously after
+  // mount). Every subsequent focus (e.g. returning from /navigation after
+  // accepting an alternative shelter) would then re-run loadHomeScreenData
+  // with a stale, forever-null token, so loadBestShelterForHome's
+  // `if (token && isAuthenticated)` check would never see the real Journey
+  // and would always fall back to a freshly recomputed nearest-shelter
+  // recommendation -- silently ignoring an already-accepted alternative.
   useFocusEffect(
     useCallback(() => {
       loadHomeScreenData();
-    }, [])
+    }, [token, isAuthenticated])
   );
 
   // Whenever the user location or best shelter changes, reload the walking route between them.
@@ -615,9 +962,15 @@ export default function HomeScreen() {
           ) : bestShelter ? (
             <>
               <Text style={styles.cardName}>{bestShelter.name}</Text>
-              <Text style={styles.cardMeta}>
-                {formatDistance(bestShelter.distance_meters)} • {bestShelter.estimated_walk_minutes} min walk
-              </Text>
+
+              {isBestShelterDistanceUnavailable ? (
+                <Text style={styles.cardMeta}>המרחק יתעדכן כשהמיקום יחזור</Text>
+              ) : (
+                <Text style={styles.cardMeta}>
+                  {formatDistance(bestShelter.distance_meters)} • {bestShelter.estimated_walk_minutes} min walk
+                </Text>
+              )}
+
               <Text style={styles.cardSource}>
                 {bestShelter.source} source
               </Text>
@@ -632,6 +985,20 @@ export default function HomeScreen() {
                   }}
                 >
                   {recommendationReason}
+                </Text>
+              ) : null}
+
+              {isJourneyLocationUnavailable ? (
+                <Text
+                  style={{
+                    marginTop: 8,
+                    fontSize: 13,
+                    color: '#94A3B8',
+                    lineHeight: 18,
+                    textAlign: 'center',
+                  }}
+                >
+                  לא הצלחנו לעדכן את המיקום כרגע. היעד הנוכחי נשמר.
                 </Text>
               ) : null}
             </>
@@ -659,6 +1026,20 @@ export default function HomeScreen() {
               </Pressable>
             </View>
           </View>
+
+          {startRouteError ? (
+            <Text
+              style={{
+                marginTop: 8,
+                fontSize: 13,
+                fontWeight: '600',
+                color: '#B91C1C',
+                textAlign: 'center',
+              }}
+            >
+              {startRouteError}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.mapSection}>

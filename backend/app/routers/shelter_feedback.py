@@ -15,12 +15,9 @@ from app.schemas.shelter_feedback import (
     ShelterFeedbackResponse,
 )
 from app.services.auth import get_current_user
+from app.services.shelter_journey import get_or_create_initial_visit_session
 
 router = APIRouter(prefix="/shelter-feedback", tags=["Shelter Feedback"])
-
-# Prevent creating duplicate open visit sessions for the same user and shelter
-# within a short time window during repeated tests or repeated button presses.
-SESSION_REUSE_WINDOW_MINUTES = 30
 
 
 @router.post("/visit-sessions", response_model=ShelterVisitSessionResponse)
@@ -29,39 +26,20 @@ def create_visit_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    now = datetime.utcnow()
-    reuse_threshold = now - timedelta(minutes=SESSION_REUSE_WINDOW_MINUTES)
-
-    # Reuse an existing open visit session for the same shelter if it was
-    # created recently and feedback has not yet been submitted.
-    existing_open_session = (
-        db.query(ShelterVisitSession)
-        .filter(
-            ShelterVisitSession.user_id == current_user.id,
-            ShelterVisitSession.shelter_id == request.shelter_id,
-            ShelterVisitSession.shelter_source == request.shelter_source,
-            ShelterVisitSession.feedback_submitted == False,
-            ShelterVisitSession.route_started_at >= reuse_threshold,
-        )
-        .order_by(ShelterVisitSession.route_started_at.desc())
-        .first()
-    )
-
-    if existing_open_session:
-        return existing_open_session
-
-    # Create a new visit session when no suitable open session exists.
-    visit_session = ShelterVisitSession(
-        user_id=current_user.id,
+    # latitude/longitude (not current_city) determine whether an Emergency
+    # Context is active and therefore whether a Journey is attached — a
+    # client-supplied city string is never trusted for this. Missing
+    # coordinates fail closed into normal mode (no Journey). The
+    # recent-open-session reuse behavior is preserved unchanged. See
+    # services/area_inference.py and services/shelter_journey.py.
+    return get_or_create_initial_visit_session(
+        db=db,
+        current_user=current_user,
         shelter_id=request.shelter_id,
         shelter_source=request.shelter_source,
+        latitude=request.latitude,
+        longitude=request.longitude,
     )
-
-    db.add(visit_session)
-    db.commit()
-    db.refresh(visit_session)
-
-    return visit_session
 
 
 @router.post(

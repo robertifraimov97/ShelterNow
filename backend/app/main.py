@@ -15,6 +15,7 @@ from app.routers import (
     users,
     auth,
     shelter_feedback,
+    shelter_journeys,
 )
 
 # Create all database tables based on the SQLAlchemy models
@@ -37,6 +38,7 @@ app.include_router(emergency_access.router)
 app.include_router(users.router)
 app.include_router(auth.router)
 app.include_router(shelter_feedback.router)
+app.include_router(shelter_journeys.router)
 
 
 # Simple root endpoint used to verify that the backend is running.

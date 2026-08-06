@@ -1,6 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Float,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    UniqueConstraint,
+)
 
 from app.db.database import Base
 
@@ -202,6 +211,68 @@ class EmergencyAccessState(Base):
     )
 
 
+# Represents one user's shelter-seeking process during one Emergency Context.
+# A journey is created only while its linked EmergencyAccessState is active,
+# and grows one Visit Session per attempted shelter (original + every
+# accepted alternative) until the user enters successfully, the linked
+# emergency context expires, or the flow is explicitly abandoned.
+class ShelterJourney(Base):
+    __tablename__ = "shelter_journeys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    # 'active' | 'entered' | 'expired' | 'abandoned'.
+    # Only 'active' is non-terminal; the other three never revert to 'active'.
+    status = Column(String, nullable=False, default="active")
+
+    # The Emergency Context this journey belongs to. Nullable only for
+    # journeys created before this field existed (see migration) — every
+    # journey created going forward must have one, since a Journey now only
+    # exists inside an Emergency Context. Liveness of the journey's context
+    # is checked live against this row's expires_at (see
+    # services/shelter_journey.py:_maybe_expire_journey), not a snapshot, so
+    # a fresh alert extending the same area's window naturally keeps an
+    # in-progress journey alive instead of cutting it off at 900 seconds.
+    emergency_access_state_id = Column(
+        Integer,
+        ForeignKey("emergency_access_states.id"),
+        nullable=True,
+        index=True,
+    )
+
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    ended_at = Column(DateTime, nullable=True)
+
+    # Denormalized convenience: which shelter this journey ultimately entered.
+    # Populated only by the /complete endpoint.
+    entered_shelter_id = Column(Integer, nullable=True)
+    entered_shelter_source = Column(String, nullable=True)
+
+    # Explicit source of truth for the currently active destination. Nullable
+    # only for the brief window between creating the journey and creating its
+    # first Visit Session within the same transaction; every successfully
+    # committed journey has this set from then on.
+    #
+    # use_alter=True breaks the circular FK cycle with shelter_visit_sessions
+    # (which itself references shelter_journeys.id) so Base.metadata.create_all
+    # can create both tables from scratch, in either order, against a fresh
+    # database.
+    current_visit_session_id = Column(
+        Integer,
+        ForeignKey(
+            "shelter_visit_sessions.id",
+            use_alter=True,
+            name="fk_journey_current_visit_session",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 # Stores a navigation session in which a user started heading toward a shelter.
 # This is later used to decide whether to ask for shelter feedback.
 class ShelterVisitSession(Base):
@@ -211,12 +282,35 @@ class ShelterVisitSession(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     shelter_id = Column(Integer, nullable=False, index=True)
     shelter_source = Column(String, nullable=False, index=True)
+
+    # Links this attempt to its journey. Nullable is a migration compatibility
+    # state for pre-journey rows, not a permanent design choice — every newly
+    # created session belongs to a journey going forward.
+    journey_id = Column(
+        Integer,
+        ForeignKey("shelter_journeys.id", name="fk_visit_session_journey"),
+        nullable=True,
+        index=True,
+    )
+
     route_started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     feedback_prompted = Column(Boolean, default=False, nullable=False)
     feedback_prompted_at = Column(DateTime, nullable=True)
     feedback_submitted = Column(Boolean, default=False, nullable=False)
     feedback_submitted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        # The same normalized shelter (source + id) must never appear twice
+        # in the same journey. NULL journey_id rows (legacy, pre-journey data)
+        # are exempt: Postgres treats NULL as distinct in unique constraints.
+        UniqueConstraint(
+            "journey_id",
+            "shelter_source",
+            "shelter_id",
+            name="uq_visit_session_journey_shelter",
+        ),
+    )
 
 
 # Stores the actual feedback answers submitted by a user about a shelter visit.

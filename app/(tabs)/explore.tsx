@@ -267,16 +267,21 @@ export default function MapScreen() {
 
   const openNavigation = async (shelter: NearbyShelterWithSummary) => {
     let visitSessionId: number | null = null;
+    let journeyId: number | null = null;
 
     try {
       if (token) {
         const visitSession = await createShelterVisitSession(
           token,
           shelter.id,
-          shelter.source
+          shelter.source,
+          userLocation?.latitude ?? null,
+          userLocation?.longitude ?? null,
+          currentCity
         );
 
         visitSessionId = visitSession.id;
+        journeyId = visitSession.journey_id ?? null;
       }
     } catch (error) {
       console.log('Failed to create shelter visit session from map screen:', error);
@@ -291,6 +296,7 @@ export default function MapScreen() {
         source: shelter.source,
         shelterId: String(shelter.id),
         visitSessionId: visitSessionId ? String(visitSessionId) : '',
+        journeyId: journeyId ? String(journeyId) : '',
       },
     });
   };
@@ -332,7 +338,8 @@ export default function MapScreen() {
   const loadNearbyShelters = async (
     latitude: number,
     longitude: number,
-    useEmergencyMode: boolean
+    useEmergencyMode: boolean,
+    cityName: string | null
   ) => {
     try {
       setLoadingShelters(true);
@@ -350,6 +357,9 @@ export default function MapScreen() {
           user_latitude: latitude,
           user_longitude: longitude,
           limit: 5,
+          // Only meaningful to the emergency-shelters endpoint, which
+          // validates it server-side before including Community shelters.
+          current_city: cityName,
         }),
       });
 
@@ -413,7 +423,7 @@ export default function MapScreen() {
 
       await Promise.all([
         loadOfficialShelters(),
-        loadNearbyShelters(coords.latitude, coords.longitude, emergencyMode),
+        loadNearbyShelters(coords.latitude, coords.longitude, emergencyMode, cityName),
       ]);
     } catch (error) {
       console.log('Failed to load explore screen data:', error);

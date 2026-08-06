@@ -10,6 +10,12 @@ class BestShelterRequest(BaseModel):
     # User's current longitude.
     user_longitude: float
 
+    # Kept for display/backward compatibility only. NEVER used to decide
+    # Emergency Mode or Community shelter exposure — that decision is
+    # derived server-side from user_latitude/user_longitude alone. See
+    # app/services/area_inference.py.
+    current_city: Optional[str] = None
+
 
 # Request schema for finding multiple nearby shelters for the user's location.
 class NearbySheltersRequest(BaseModel):
@@ -21,6 +27,13 @@ class NearbySheltersRequest(BaseModel):
 
     # Maximum number of shelters to return.
     limit: int = 3
+
+    # Kept for display/backward compatibility only. NEVER used to decide
+    # Emergency Mode or Community shelter exposure — a client-supplied city
+    # string is not a trustworthy security boundary. That decision is
+    # derived server-side from user_latitude/user_longitude alone. See
+    # app/services/area_inference.py.
+    current_city: Optional[str] = None
 
 
 # Response schema for the best shelter recommendation endpoint.

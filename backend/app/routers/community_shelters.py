@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -7,6 +7,10 @@ from app.db.models import CommunityShelter
 from app.schemas.community_shelter import (
     CommunityShelterCreate,
     CommunityShelterResponse,
+)
+from app.services.area_inference import (
+    get_active_emergency_state,
+    get_eligible_community_shelters,
 )
 from app.services.geocoding import geocode_address
 
@@ -63,16 +67,23 @@ def get_community_shelters(
 
 @router.get("/emergency", response_model=List[CommunityShelterResponse])
 def get_emergency_community_shelters(
+    latitude: float = Query(...),
+    longitude: float = Query(...),
     db: Session = Depends(get_db),
 ):
-    # Fetch only active community shelters that should be shown
-    # during emergency mode.
-    shelters = (
-        db.query(CommunityShelter)
-        .filter(
-            CommunityShelter.is_active == True,
-            CommunityShelter.show_only_during_emergency == True,
-        )
-        .all()
-    )
-    return shelters
+    # Community shelters must never be exposed outside a verified, active
+    # Emergency Context — enforced here using the request's own coordinates,
+    # never a client-supplied current_city string (not a trustworthy security
+    # boundary — see area_inference.py). Missing/unusable coordinates,
+    # uncertain area inference, or no matching/expired emergency context all
+    # fail closed to an empty list below, since get_active_emergency_state
+    # returns None in every one of those cases.
+    active_emergency_state = get_active_emergency_state(db, latitude, longitude)
+
+    if not active_emergency_state:
+        return []
+
+    # Centralized candidate-pool policy (area_inference.get_eligible_community_shelters)
+    # — the same pool and the same gate used by every other Community-shelter-
+    # returning path (recommendations.py, Alternative Preview).
+    return get_eligible_community_shelters(db)
