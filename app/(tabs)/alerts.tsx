@@ -1,7 +1,14 @@
-import { SafeAreaView, View, Text, StyleSheet, ScrollView } from 'react-native';
+import {
+  SafeAreaView,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+} from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import * as Location from 'expo-location';
+
 import { API_BASE_URL } from '../../constants/api';
 import { registerForPushNotificationsAsync } from '../../services/pushNotifications';
 import { useAuth } from '../../context/AuthContext';
@@ -39,7 +46,10 @@ type AlertClassification = {
 
 // Describes the product/UI behavior that should happen for the alert.
 type AlertExperience = {
-  focus_mode: 'normal' | 'current_location_warning' | 'current_location_emergency';
+  focus_mode:
+    | 'normal'
+    | 'current_location_warning'
+    | 'current_location_emergency';
   show_nearest_shelter_button: boolean;
   should_offer_shelter_guidance: boolean;
   allow_temporary_community_shelter_access: boolean;
@@ -63,34 +73,41 @@ type AlertsResponse = {
 };
 
 export default function AlertsScreen() {
-  const { token } = useAuth();
+  const { token, isAuthenticated } = useAuth();
 
-  // State for all followed areas chosen by the user.
+  // State for all followed areas chosen by the currently authenticated user.
   const [followedAreas, setFollowedAreas] = useState<FollowedArea[]>([]);
 
   // State for the screen loading status.
   const [loading, setLoading] = useState(true);
 
   // State for the user's currently detected city/area name.
-  const [currentAreaName, setCurrentAreaName] = useState('Loading location...');
+  const [currentAreaName, setCurrentAreaName] = useState(
+    'Loading location...'
+  );
 
   // State for the alerts response returned from the backend.
-  const [alertsResponse, setAlertsResponse] = useState<AlertsResponse | null>(null);
+  const [alertsResponse, setAlertsResponse] =
+    useState<AlertsResponse | null>(null);
 
   // Get the current city/area name by requesting location permission,
   // fetching device coordinates, and reverse geocoding them.
   const getCurrentAreaName = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
+    const { status } =
+      await Location.requestForegroundPermissionsAsync();
 
     if (status !== 'granted') {
       return 'Location unavailable';
     }
 
-    const location = await Location.getCurrentPositionAsync({});
-    const reverseGeocoded = await Location.reverseGeocodeAsync({
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
-    });
+    const location =
+      await Location.getCurrentPositionAsync({});
+
+    const reverseGeocoded =
+      await Location.reverseGeocodeAsync({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
 
     if (reverseGeocoded.length === 0) {
       return 'Unknown area';
@@ -98,20 +115,59 @@ export default function AlertsScreen() {
 
     const place = reverseGeocoded[0];
 
-    return place.city || place.subregion || place.region || 'Unknown area';
+    return (
+      place.city ||
+      place.subregion ||
+      place.region ||
+      'Unknown area'
+    );
   };
 
-  // Load followed areas, current location, and alert information from the backend.
+  // Load followed areas, current location, and alert information.
   const loadInitialData = async () => {
     try {
       setLoading(true);
 
-      // Load followed areas — requires auth token.
-      const followedResponse = await fetch(`${API_BASE_URL}/followed-areas/`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const followedRaw = await followedResponse.json();
-      const followedData: FollowedArea[] = Array.isArray(followedRaw) ? followedRaw : [];
+      // Prevent data from a previous user from remaining on screen.
+      if (!token || !isAuthenticated) {
+        setFollowedAreas([]);
+        setAlertsResponse(null);
+        setCurrentAreaName('Location unavailable');
+        return;
+      }
+
+      // Load only the followed areas that belong to the current user.
+      const followedResponse = await fetch(
+        `${API_BASE_URL}/followed-areas/`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!followedResponse.ok) {
+        const errorText = await followedResponse.text();
+
+        console.log(
+          'Failed to load followed areas:',
+          followedResponse.status,
+          errorText
+        );
+
+        setFollowedAreas([]);
+        setAlertsResponse(null);
+        return;
+      }
+
+      const followedRaw: unknown =
+        await followedResponse.json();
+
+      const followedData: FollowedArea[] =
+        Array.isArray(followedRaw)
+          ? (followedRaw as FollowedArea[])
+          : [];
 
       // Detect the user's current city/area.
       const cityName = await getCurrentAreaName();
@@ -131,78 +187,137 @@ export default function AlertsScreen() {
       }
 
       followedData.forEach((area) => {
-        params.append('followed_areas', area.area_name);
+        params.append(
+          'followed_areas',
+          area.area_name
+        );
       });
 
-      // Load alert data based on current city and followed areas.
-      const alertsResponse = await fetch(`${API_BASE_URL}/alerts/?${params.toString()}`);
-      const alertsData: AlertsResponse = await alertsResponse.json();
+      // Load alert data based on current location
+      // and only the followed areas of the active user.
+      const alertResponse = await fetch(
+        `${API_BASE_URL}/alerts/?${params.toString()}`
+      );
+
+      if (!alertResponse.ok) {
+        const errorText = await alertResponse.text();
+
+        console.log(
+          'Failed to load alerts:',
+          alertResponse.status,
+          errorText
+        );
+
+        setAlertsResponse(null);
+        return;
+      }
+
+      const alertsData: AlertsResponse =
+        await alertResponse.json();
 
       setAlertsResponse(alertsData);
     } catch (error) {
-      console.log('Failed to load alerts screen data:', error);
+      console.log(
+        'Failed to load alerts screen data:',
+        error
+      );
+
+      setFollowedAreas([]);
+      setAlertsResponse(null);
     } finally {
       setLoading(false);
     }
   };
 
-  // Reload alerts data every time the screen comes into focus,
-  // and also try to register the device for push notifications.
+  // Reload data whenever the screen gains focus.
+  // token and isAuthenticated are dependencies so switching users
+  // always loads data for the newly authenticated account.
   useFocusEffect(
     useCallback(() => {
       loadInitialData();
 
       registerForPushNotificationsAsync()
-        .then((token) => {
-          console.log('Push token:', token);
+        .then((pushToken) => {
+          console.log(
+            'Push token:',
+            pushToken
+          );
         })
         .catch((error) => {
-          console.error('Push registration failed:', error);
+          console.error(
+            'Push registration failed:',
+            error
+          );
         });
-
-    }, [])
+    }, [token, isAuthenticated])
   );
 
   // Convenience values derived from the loaded alerts response.
-  const priority = alertsResponse?.relevance.priority || 'none';
-  const hasActiveAlert = alertsResponse?.alert.has_active_alert || false;
-  const rawAlert = alertsResponse?.alert.raw || {};
-  const alertTitle = rawAlert.title || 'No active alert';
-  const alertDescription = rawAlert.desc || '';
-  const affectedAreas: string[] = rawAlert.data || [];
+  const priority =
+    alertsResponse?.relevance.priority || 'none';
+
+  const hasActiveAlert =
+    alertsResponse?.alert.has_active_alert || false;
+
+  const rawAlert =
+    alertsResponse?.alert.raw || {};
+
+  const alertTitle =
+    rawAlert.title || 'No active alert';
+
+  const alertDescription =
+    rawAlert.desc || '';
+
+  const affectedAreas: string[] =
+    Array.isArray(rawAlert.data)
+      ? rawAlert.data
+      : [];
+
   const matchedFollowedAreas =
-    alertsResponse?.relevance.matched_followed_areas || [];
+    alertsResponse?.relevance
+      .matched_followed_areas || [];
 
   const currentLocationAlert =
-    alertsResponse?.relevance.current_location_alert;
+    alertsResponse?.relevance
+      .current_location_alert;
 
-  // Combine the current-location alert area and all matched followed areas.
+  // Combine current-location alert and followed-area alert matches.
   const relevantAreas = [
-    ...(currentLocationAlert ? [currentLocationAlert] : []),
+    ...(currentLocationAlert
+      ? [currentLocationAlert]
+      : []),
     ...matchedFollowedAreas,
   ];
 
-  // Remove duplicates from the relevant areas list.
-  const uniqueRelevantAreas = Array.from(new Set(relevantAreas));
+  // Remove duplicates.
+  const uniqueRelevantAreas =
+    Array.from(new Set(relevantAreas));
 
-  const classification = alertsResponse?.classification;
-  const experience = alertsResponse?.experience;
+  const classification =
+    alertsResponse?.classification;
+
+  const experience =
+    alertsResponse?.experience;
 
   // UI mode decided by the backend alert experience layer.
-  const focusMode = experience?.focus_mode || 'normal';
+  const focusMode =
+    experience?.focus_mode || 'normal';
 
   // Whether the user's current location is in an emergency state.
   const isCurrentLocationEmergency =
-    focusMode === 'current_location_emergency';
+    focusMode ===
+    'current_location_emergency';
 
   // Whether the user's current location is in a warning state.
   const isCurrentLocationWarning =
-    focusMode === 'current_location_warning';
+    focusMode ===
+    'current_location_warning';
 
   // Whether to show the shelter call-to-action button.
   const shouldShowShelterButton =
     experience?.show_nearest_shelter_button ||
-    alertsResponse?.relevance.show_nearest_shelter_button ||
+    alertsResponse?.relevance
+      .show_nearest_shelter_button ||
     false;
 
   // Whether to show a followed-area banner.
@@ -210,11 +325,15 @@ export default function AlertsScreen() {
     experience?.show_followed_area_banner ??
     priority === 'followed_area';
 
-  // Final flags used for coloring and styling the status card.
-  const isEmergency = isCurrentLocationEmergency;
-  const isWarning = isCurrentLocationWarning || shouldShowFollowedAreaBanner;
+  // Final flags used for status-card styling.
+  const isEmergency =
+    isCurrentLocationEmergency;
 
-  // Main status text shown in the status card.
+  const isWarning =
+    isCurrentLocationWarning ||
+    shouldShowFollowedAreaBanner;
+
+  // Main status text.
   const statusText = loading
     ? 'Checking alerts...'
     : isCurrentLocationEmergency
@@ -225,23 +344,30 @@ export default function AlertsScreen() {
           ? 'Alert in followed area'
           : 'No active alert';
 
-  // Short status label shown in the current alert feed card.
-  const feedStatusText = isCurrentLocationEmergency
-    ? 'Emergency'
-    : isCurrentLocationWarning
-      ? 'Warning'
-      : classification?.event_type === 'event_ended'
-        ? 'Ended'
-        : hasActiveAlert
-          ? 'Active'
-          : 'Calm';
+  // Short status label shown in current alert feed.
+  const feedStatusText =
+    isCurrentLocationEmergency
+      ? 'Emergency'
+      : isCurrentLocationWarning
+        ? 'Warning'
+        : classification?.event_type ===
+            'event_ended'
+          ? 'Ended'
+          : hasActiveAlert
+            ? 'Active'
+            : 'Calm';
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+      >
         {/* Screen header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Emergency Alerts</Text>
+          <Text style={styles.title}>
+            Emergency Alerts
+          </Text>
+
           <Text style={styles.subtitle}>
             Real-time alerts for your location and followed areas
           </Text>
@@ -251,87 +377,153 @@ export default function AlertsScreen() {
         <View
           style={[
             styles.statusCard,
-            isEmergency && styles.statusCardEmergency,
-            isWarning && !isEmergency && styles.statusCardWarning,
+            isEmergency &&
+              styles.statusCardEmergency,
+            isWarning &&
+              !isEmergency &&
+              styles.statusCardWarning,
           ]}
         >
-          <Text style={styles.cardLabel}>Current Area</Text>
+          <Text style={styles.cardLabel}>
+            Current Area
+          </Text>
 
           <Text
             style={[
               styles.statusValue,
-              isEmergency && styles.statusValueEmergency,
-              isWarning && !isEmergency && styles.statusValueWarning,
+              isEmergency &&
+                styles.statusValueEmergency,
+              isWarning &&
+                !isEmergency &&
+                styles.statusValueWarning,
             ]}
           >
             {statusText}
           </Text>
 
-          <Text style={styles.cardInfo}>{currentAreaName}</Text>
+          <Text style={styles.cardInfo}>
+            {currentAreaName}
+          </Text>
 
           {/* Extra alert details shown only when an active alert exists */}
           {hasActiveAlert && (
-            <View style={styles.alertDetailsBox}>
-              <Text style={styles.alertTitle}>{alertTitle}</Text>
+            <View
+              style={styles.alertDetailsBox}
+            >
+              <Text style={styles.alertTitle}>
+                {alertTitle}
+              </Text>
 
               {alertDescription ? (
-                <Text style={styles.alertDescription}>{alertDescription}</Text>
+                <Text
+                  style={
+                    styles.alertDescription
+                  }
+                >
+                  {alertDescription}
+                </Text>
               ) : null}
 
-              {uniqueRelevantAreas.length > 0 ? (
-                <Text style={styles.affectedAreas}>
-                  Relevant areas: {uniqueRelevantAreas.join(', ')}
+              {uniqueRelevantAreas.length >
+              0 ? (
+                <Text
+                  style={
+                    styles.affectedAreas
+                  }
+                >
+                  Relevant areas:{' '}
+                  {uniqueRelevantAreas.join(
+                    ', '
+                  )}
                 </Text>
               ) : null}
 
               {classification ? (
-                <Text style={styles.classificationInfo}>
-                  {classification.event_type} · {classification.severity}
+                <Text
+                  style={
+                    styles.classificationInfo
+                  }
+                >
+                  {
+                    classification.event_type
+                  }{' '}
+                  ·{' '}
+                  {
+                    classification.severity
+                  }
                 </Text>
               ) : null}
             </View>
           )}
 
-          {/* Shelter CTA shown only when the backend says shelter guidance should be offered */}
+          {/* Shelter CTA */}
           {shouldShowShelterButton && (
             <View style={styles.ctaButton}>
-              <Text style={styles.ctaButtonText}>Find nearest shelter</Text>
+              <Text
+                style={
+                  styles.ctaButtonText
+                }
+              >
+                Find nearest shelter
+              </Text>
             </View>
           )}
         </View>
 
         {/* Followed areas section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Followed Areas</Text>
+          <Text style={styles.sectionTitle}>
+            Followed Areas
+          </Text>
 
           {loading ? (
-            <Text style={styles.helperText}>Loading followed areas...</Text>
+            <Text style={styles.helperText}>
+              Loading followed areas...
+            </Text>
           ) : followedAreas.length === 0 ? (
-            <Text style={styles.helperText}>No followed areas yet.</Text>
+            <Text style={styles.helperText}>
+              No followed areas yet.
+            </Text>
           ) : (
             followedAreas.map((area) => {
-              // Check whether this followed area currently matches the alert.
-              const hasMatchedAlert = matchedFollowedAreas.includes(area.area_name);
-              const followedAreaSeverity = classification?.severity || 'none';
-              const followedAreaEventType = classification?.event_type || 'none';
+              const hasMatchedAlert =
+                matchedFollowedAreas.includes(
+                  area.area_name
+                );
 
-              // Text shown as the main followed-area status.
+              const followedAreaSeverity =
+                classification?.severity ||
+                'none';
+
+              const followedAreaEventType =
+                classification?.event_type ||
+                'none';
+
               const followedAreaStatusText =
-                hasMatchedAlert && followedAreaSeverity === 'critical'
+                hasMatchedAlert &&
+                followedAreaSeverity ===
+                  'critical'
                   ? 'Active alert'
-                  : hasMatchedAlert && followedAreaSeverity === 'warning'
+                  : hasMatchedAlert &&
+                      followedAreaSeverity ===
+                        'warning'
                     ? 'Warning'
-                    : hasMatchedAlert && followedAreaSeverity === 'info'
+                    : hasMatchedAlert &&
+                        followedAreaSeverity ===
+                          'info'
                       ? 'Update'
                       : hasMatchedAlert
                         ? 'Alert update'
                         : 'No active alert';
 
-              // Secondary text shown under the main followed-area status.
               const followedAreaSubText =
-                hasMatchedAlert && followedAreaEventType === 'prepare_near_shelter'
+                hasMatchedAlert &&
+                followedAreaEventType ===
+                  'prepare_near_shelter'
                   ? 'Prepare near shelter'
-                  : hasMatchedAlert && followedAreaEventType === 'event_ended'
+                  : hasMatchedAlert &&
+                      followedAreaEventType ===
+                        'event_ended'
                     ? 'Event ended'
                     : hasMatchedAlert
                       ? 'Relevant alert detected'
@@ -343,11 +535,16 @@ export default function AlertsScreen() {
                   style={[
                     styles.alertCard,
                     hasMatchedAlert &&
-                    followedAreaSeverity === 'critical' &&
-                    styles.alertCardActive,
+                      followedAreaSeverity ===
+                        'critical' &&
+                      styles.alertCardActive,
                   ]}
                 >
-                  <Text style={styles.areaName}>{area.area_name}</Text>
+                  <Text
+                    style={styles.areaName}
+                  >
+                    {area.area_name}
+                  </Text>
 
                   <Text
                     style={
@@ -356,11 +553,17 @@ export default function AlertsScreen() {
                         : styles.alertStatusCalm
                     }
                   >
-                    {followedAreaStatusText}
+                    {
+                      followedAreaStatusText
+                    }
                   </Text>
 
-                  <Text style={styles.alertTime}>
-                    {followedAreaSubText}
+                  <Text
+                    style={styles.alertTime}
+                  >
+                    {
+                      followedAreaSubText
+                    }
                   </Text>
                 </View>
               );
@@ -368,34 +571,61 @@ export default function AlertsScreen() {
           )}
         </View>
 
-        {/* Current alert feed section */}
+        {/* Current alert feed */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Current Alert Feed</Text>
+          <Text style={styles.sectionTitle}>
+            Current Alert Feed
+          </Text>
 
           {loading ? (
-            <Text style={styles.helperText}>Checking alert feed...</Text>
+            <Text style={styles.helperText}>
+              Checking alert feed...
+            </Text>
           ) : hasActiveAlert ? (
             <View style={styles.recentCard}>
-              <View style={styles.recentTextBlock}>
-                <Text style={styles.recentArea}>{alertTitle}</Text>
-                <Text style={styles.recentSubText}>
+              <View
+                style={
+                  styles.recentTextBlock
+                }
+              >
+                <Text
+                  style={
+                    styles.recentArea
+                  }
+                >
+                  {alertTitle}
+                </Text>
+
+                <Text
+                  style={
+                    styles.recentSubText
+                  }
+                >
                   {affectedAreas.length > 0
-                    ? affectedAreas.join(', ')
+                    ? affectedAreas.join(
+                        ', '
+                      )
                     : 'No affected areas listed'}
                 </Text>
               </View>
+
               <Text
                 style={[
                   styles.recentTime,
-                  isCurrentLocationWarning && styles.recentTimeWarning,
-                  classification?.event_type === 'event_ended' && styles.recentTimeEnded,
+                  isCurrentLocationWarning &&
+                    styles.recentTimeWarning,
+                  classification?.event_type ===
+                    'event_ended' &&
+                    styles.recentTimeEnded,
                 ]}
               >
                 {feedStatusText}
               </Text>
             </View>
           ) : (
-            <Text style={styles.helperText}>No active alerts right now.</Text>
+            <Text style={styles.helperText}>
+              No active alerts right now.
+            </Text>
           )}
         </View>
       </ScrollView>
