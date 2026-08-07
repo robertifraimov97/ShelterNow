@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Location from 'expo-location';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, SafeAreaView, Text, View } from 'react-native';
+import { Pressable, SafeAreaView, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import AlternativeShelterPreviewModal, {
   type AlternativeShelterPreviewData,
@@ -80,6 +80,9 @@ export default function NavigationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { token } = useAuth();
+  const { height: screenHeight } = useWindowDimensions();
+  const isCompactScreen = screenHeight <= 750;
+  const mapHeight = isCompactScreen ? 300 : 350;
 
   // Extract shelter data passed through route params.
   const shelterName = String(params.name || '');
@@ -402,85 +405,156 @@ export default function NavigationScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Hide the default Expo Router header for this screen */}
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={[styles.content, { flex: 1 }]}>
-        <View style={styles.header}>
-          {/* Back button */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingTop: isCompactScreen ? 6 : 10,
+          paddingBottom: 32,
+        }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior="never"
+      >
+        <View
+          style={{
+            marginBottom: isCompactScreen ? 12 : 16,
+          }}
+        >
           <Pressable
             style={{
               alignSelf: 'flex-start',
-              paddingVertical: 8,
-              paddingHorizontal: 14,
+              paddingVertical: 7,
+              paddingHorizontal: 13,
               borderRadius: 12,
               backgroundColor: '#E2E8F0',
+              marginBottom: isCompactScreen ? 12 : 16,
             }}
             onPress={() => router.back()}
           >
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: '#0F172A' }}>
               Back
             </Text>
           </Pressable>
 
-          <Text style={styles.appName}>Navigation</Text>
-          <Text style={styles.subtitle}>Walk safely to your selected shelter</Text>
+          <Text
+            style={{
+              color: '#0F172A',
+              fontSize: isCompactScreen ? 36 : 42,
+              lineHeight: isCompactScreen ? 40 : 46,
+              fontWeight: '800',
+              letterSpacing: -1.2,
+            }}
+          >
+            Navigation
+          </Text>
+          <Text
+            style={{
+              color: '#64748B',
+              fontSize: isCompactScreen ? 16 : 18,
+              lineHeight: isCompactScreen ? 21 : 24,
+              marginTop: 5,
+            }}
+          >
+            Walk safely to your selected shelter
+          </Text>
         </View>
 
-        {/*
-          Main route summary card.
+        <View
+          style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: '#DDE3EC',
+            paddingHorizontal: isCompactScreen ? 18 : 22,
+            paddingVertical: isCompactScreen ? 16 : 20,
+            marginBottom: isCompactScreen ? 14 : 18,
+            shadowColor: '#0F172A',
+            shadowOpacity: 0.04,
+            shadowRadius: 10,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 2,
+          }}
+        >
+          <Text
+            style={{
+              color: '#0F172A',
+              fontSize: isCompactScreen ? 18 : 20,
+              lineHeight: isCompactScreen ? 22 : 24,
+              fontWeight: '800',
+              marginBottom: isCompactScreen ? 8 : 10,
+            }}
+          >
+            Destination
+          </Text>
 
-          Extension point: a future explicit Journey action such as "שנה
-          יעד" (change destination, already effectively available via the
-          "מצא לי מקלט חלופי" button below) or "חזור ליעד קודם" (revert to
-          previous destination — backend already tracks
-          previous_visit_session_id, see AlternativeShelterPreviewModal and
-          accept_alternative) would live here as its own action, calling a
-          dedicated Journey endpoint. It must never be modeled as
-          router.back()/browser Back — the Journey, not navigation history,
-          is the source of truth for "what was I heading to before".
-        */}
-        <View style={styles.mainCard}>
-          <Text style={styles.cardTitle}>Destination</Text>
-          <Text style={styles.cardName}>{shelterName || 'Shelter'}</Text>
+          <Text
+            numberOfLines={2}
+            style={{
+              color: '#1E3A8A',
+              fontSize: isCompactScreen ? 24 : 28,
+              lineHeight: isCompactScreen ? 30 : 34,
+              fontWeight: '800',
+              textAlign: 'right',
+            }}
+          >
+            {shelterName || 'Shelter'}
+          </Text>
 
           {routeDistance !== null && routeDuration !== null ? (
-            <Text style={styles.cardMeta}>
+            <Text
+              style={{
+                color: '#475569',
+                fontSize: isCompactScreen ? 16 : 17,
+                marginTop: 7,
+              }}
+            >
               {formatDistance(routeDistance)} • {formatDuration(routeDuration)}
             </Text>
           ) : (
-            <Text style={styles.cardMeta}>Loading route details...</Text>
+            <Text style={{ color: '#475569', fontSize: 16, marginTop: 7 }}>
+              Loading route details...
+            </Text>
           )}
 
-          <Text style={styles.cardSource}>
+          <Text
+            numberOfLines={1}
+            style={{
+              color: '#64748B',
+              fontSize: isCompactScreen ? 14 : 15,
+              marginTop: 6,
+            }}
+          >
             {isLoadingRoute
               ? 'Updating route...'
               : `${destinationTypeLabel} • Live navigation preview`}
           </Text>
 
           {hasValidVisitSessionId && (
-            <View style={{ marginTop: 14, gap: 10 }}>
+            <View style={{ marginTop: isCompactScreen ? 12 : 15, gap: 9 }}>
               {isNearShelter && (
                 <Pressable
                   onPress={handleArrivalPress}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
-                    gap: 10,
+                    gap: 9,
                     backgroundColor: '#ECFDF3',
                     borderWidth: 1.5,
                     borderColor: '#86EFAC',
-                    borderRadius: 14,
-                    paddingVertical: 12,
-                    paddingHorizontal: 14,
+                    borderRadius: 13,
+                    paddingVertical: 10,
+                    paddingHorizontal: 13,
                   }}
                 >
-                  <Ionicons name="location" size={24} color="#15803D" />
+                  <Ionicons name="location" size={22} color="#15803D" />
                   <View style={{ flex: 1 }}>
                     <Text
                       style={{
                         color: '#14532D',
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: '800',
                         textAlign: 'right',
                       }}
@@ -490,43 +564,34 @@ export default function NavigationScreen() {
                     <Text
                       style={{
                         color: '#166534',
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: '500',
-                        marginTop: 2,
+                        marginTop: 1,
                         textAlign: 'right',
                       }}
                     >
                       לחץ כאן כדי לבדוק אם הצלחת להיכנס
                     </Text>
                   </View>
-                  <Ionicons name="chevron-back" size={20} color="#15803D" />
+                  <Ionicons name="chevron-back" size={18} color="#15803D" />
                 </Pressable>
               )}
 
               <Pressable
                 style={{
+                  minHeight: 50,
                   flexDirection: 'row',
                   justifyContent: 'center',
                   alignItems: 'center',
                   gap: 8,
                   backgroundColor: '#2563EB',
-                  borderRadius: 14,
-                  paddingVertical: 15,
+                  borderRadius: 13,
+                  paddingVertical: 12,
                 }}
                 onPress={handleArrivalPress}
               >
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={22}
-                  color="#FFFFFF"
-                />
-                <Text
-                  style={{
-                    color: '#FFFFFF',
-                    fontSize: 16,
-                    fontWeight: '800',
-                  }}
-                >
+                <Ionicons name="checkmark-circle-outline" size={21} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '800' }}>
                   הגעתי למקלט
                 </Text>
               </Pressable>
@@ -535,6 +600,7 @@ export default function NavigationScreen() {
                 <>
                   <Pressable
                     style={{
+                      minHeight: 48,
                       flexDirection: 'row',
                       justifyContent: 'center',
                       alignItems: 'center',
@@ -542,25 +608,15 @@ export default function NavigationScreen() {
                       backgroundColor: '#FFFFFF',
                       borderWidth: 1.5,
                       borderColor: '#94A3B8',
-                      borderRadius: 14,
-                      paddingVertical: 14,
+                      borderRadius: 13,
+                      paddingVertical: 11,
                       opacity: isFindingAlternative ? 0.7 : 1,
                     }}
                     onPress={handleFindAlternativeShelter}
                     disabled={isFindingAlternative}
                   >
-                    <Ionicons
-                      name="swap-horizontal"
-                      size={22}
-                      color="#334155"
-                    />
-                    <Text
-                      style={{
-                        color: '#334155',
-                        fontSize: 15,
-                        fontWeight: '800',
-                      }}
-                    >
+                    <Ionicons name="swap-horizontal" size={21} color="#334155" />
+                    <Text style={{ color: '#334155', fontSize: 15, fontWeight: '800' }}>
                       {isFindingAlternative
                         ? 'בודקים חלופה מתאימה...'
                         : 'מצא לי מקלט חלופי'}
@@ -571,7 +627,7 @@ export default function NavigationScreen() {
                     <Text
                       style={{
                         color: '#B91C1C',
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: '600',
                         textAlign: 'center',
                       }}
@@ -585,11 +641,30 @@ export default function NavigationScreen() {
           )}
         </View>
 
-        {/* Map and live navigation section */}
-        <View style={[styles.mapSection, { flex: 1 }]}>
-          <Text style={styles.mapTitle}>Navigation Map</Text>
+        <View style={{ flexShrink: 1 }}>
+          <Text
+            style={{
+              color: '#0F172A',
+              fontSize: isCompactScreen ? 24 : 28,
+              lineHeight: isCompactScreen ? 29 : 33,
+              fontWeight: '800',
+              marginBottom: isCompactScreen ? 10 : 12,
+              letterSpacing: -0.5,
+            }}
+          >
+            Navigation Map
+          </Text>
 
-          <View style={[styles.mapContainer, { flex: 1, minHeight: 450 }]}>
+          <View
+            style={{
+              height: mapHeight,
+              borderRadius: 22,
+              overflow: 'hidden',
+              borderWidth: 1,
+              borderColor: '#DDE3EC',
+              backgroundColor: '#E2E8F0',
+            }}
+          >
             {userLocation ? (
               <>
                 <MapView
@@ -603,7 +678,6 @@ export default function NavigationScreen() {
                   }}
                   showsUserLocation={false}
                 >
-                  {/* Marker for user's current location */}
                   <Marker
                     coordinate={{
                       latitude: userLocation.latitude,
@@ -614,7 +688,6 @@ export default function NavigationScreen() {
                     pinColor="red"
                   />
 
-                  {/* Marker for the destination shelter */}
                   <Marker
                     coordinate={{
                       latitude: shelterLatitude,
@@ -625,7 +698,6 @@ export default function NavigationScreen() {
                     pinColor={destinationPinColor}
                   />
 
-                  {/* Route polyline */}
                   {walkingRoute.length > 0 && (
                     <Polyline
                       coordinates={walkingRoute}
@@ -635,26 +707,22 @@ export default function NavigationScreen() {
                   )}
                 </MapView>
 
-                {/* Recenter button */}
                 <Pressable
                   style={{
                     position: 'absolute',
-                    top: 14,
-                    right: 14,
+                    top: 12,
+                    right: 12,
                     backgroundColor: '#FFFFFF',
-                    paddingVertical: 10,
-                    paddingHorizontal: 14,
+                    paddingVertical: 9,
+                    paddingHorizontal: 13,
                     borderRadius: 999,
                     borderWidth: 1,
                     borderColor: '#D1D9E6',
                     shadowColor: '#000',
-                    shadowOpacity: 0.12,
-                    shadowRadius: 6,
-                    shadowOffset: {
-                      width: 0,
-                      height: 3,
-                    },
-                    elevation: 4,
+                    shadowOpacity: 0.1,
+                    shadowRadius: 5,
+                    shadowOffset: { width: 0, height: 2 },
+                    elevation: 3,
                   }}
                   onPress={() => {
                     if (userLocation && mapRef.current) {
@@ -675,72 +743,72 @@ export default function NavigationScreen() {
                   </Text>
                 </Pressable>
 
-                {/* Overlay card showing the current navigation instruction */}
                 {currentInstruction && (
                   <View
                     style={{
                       position: 'absolute',
-                      left: 14,
-                      right: 14,
-                      bottom: 14,
-                      backgroundColor: 'rgba(255, 255, 255, 0.85)',
-                      borderRadius: 18,
-                      padding: 14,
+                      left: 12,
+                      right: 12,
+                      bottom: 12,
+                      backgroundColor: 'rgba(255, 255, 255, 0.92)',
+                      borderRadius: 16,
+                      paddingHorizontal: 14,
+                      paddingVertical: 11,
                       borderWidth: 1,
                       borderColor: '#E2E8F0',
                       shadowColor: '#000',
-                      shadowOpacity: 0.12,
-                      shadowRadius: 6,
-                      shadowOffset: {
-                        width: 0,
-                        height: 3,
-                      },
-                      elevation: 4,
+                      shadowOpacity: 0.1,
+                      shadowRadius: 5,
+                      shadowOffset: { width: 0, height: 2 },
+                      elevation: 3,
                     }}
                   >
                     <Text
                       style={{
-                        fontSize: 13,
+                        fontSize: 12,
                         color: '#64748B',
-                        marginBottom: 4,
+                        marginBottom: 3,
+                        fontWeight: '600',
                       }}
                     >
                       Current instruction
                     </Text>
 
                     <Text
+                      numberOfLines={2}
                       style={{
-                        fontSize: 17,
-                        fontWeight: '700',
+                        fontSize: isCompactScreen ? 16 : 17,
+                        fontWeight: '800',
                         color: '#0F172A',
-                        lineHeight: 22,
+                        lineHeight: isCompactScreen ? 20 : 22,
                         textAlign: 'left',
                       }}
                     >
                       {currentInstruction.instruction}
                     </Text>
 
-                    <Text
+                    <View
                       style={{
-                        fontSize: 14,
-                        color: '#475569',
-                        marginTop: 6,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginTop: 5,
                       }}
                     >
-                      {formatDistance(currentInstruction.distance_meters)} •{' '}
-                      {formatDuration(currentInstruction.duration_seconds)}
-                    </Text>
-
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        color: isCommunityShelter ? '#7C3AED' : '#2563EB',
-                        fontWeight: '700',
-                        marginTop: 8,
-                      }}
-                    >
-                      {destinationTypeLabel}
-                    </Text>
+                      <Text style={{ fontSize: 13, color: '#475569' }}>
+                        {formatDistance(currentInstruction.distance_meters)} •{' '}
+                        {formatDuration(currentInstruction.duration_seconds)}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: isCommunityShelter ? '#7C3AED' : '#2563EB',
+                          fontWeight: '700',
+                        }}
+                      >
+                        {destinationTypeLabel}
+                      </Text>
+                    </View>
                   </View>
                 )}
               </>
@@ -751,7 +819,7 @@ export default function NavigationScreen() {
             )}
           </View>
         </View>
-      </View>
+      </ScrollView>
 
       <AlternativeShelterPreviewModal
         visible={isAlternativePreviewVisible}
