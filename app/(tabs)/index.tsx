@@ -48,6 +48,7 @@ type NearbyShelter = {
   estimated_walk_minutes: number;
   source: string;
   accessibility_notes?: string | null;
+  recommendation_reason?: string | null;
 };
 
 type NearbyShelterWithSummary = NearbyShelter & {
@@ -410,76 +411,129 @@ export default function HomeScreen() {
   // preferences. `generation` guards against this response landing after a
   // newer load has already started (e.g. one that found an active Journey)
   // — see loadGenerationRef.
-  const loadRecommendedShelter = async (
-    latitude: number,
-    longitude: number,
-    useEmergencyMode: boolean,
-    preferences: UserPreferences | null,
-    cityName: string | null,
-    generation: number
-  ) => {
-    try {
-      setLoadingBestShelter(true);
+    const loadRecommendedShelter = async (
+      latitude: number,
+      longitude: number,
+      useEmergencyMode: boolean,
+      preferences: UserPreferences | null,
+      cityName: string | null,
+      generation: number
+    ) => {
+      try {
+        setLoadingBestShelter(true);
 
-      const endpoint = useEmergencyMode
-        ? `${API_BASE_URL}/recommendations/nearby-emergency-shelters`
-        : `${API_BASE_URL}/recommendations/nearby-shelters`;
+        // Authenticated users use the backend decision engine
+        // in both normal and emergency mode.
+        if (token && isAuthenticated) {
+          try {
+            const decisionEndpoint = useEmergencyMode
+              ? `${API_BASE_URL}/recommendations/best-emergency-shelter`
+              : `${API_BASE_URL}/recommendations/best-shelter`;
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          user_latitude: latitude,
-          user_longitude: longitude,
-          limit: 10,
-          // Only meaningful to the emergency-shelters endpoint, which
-          // validates it server-side before including Community shelters.
-          current_city: cityName,
-        }),
-      });
+            const decisionResponse = await fetch(decisionEndpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                user_latitude: latitude,
+                user_longitude: longitude,
+                current_city: cityName,
+              }),
+            });
 
-      if (generation !== loadGenerationRef.current) {
-        // A newer load has already started -- discard this stale response
-        // without touching any state.
-        return;
+            if (generation !== loadGenerationRef.current) {
+              return;
+            }
+
+            if (decisionResponse.ok) {
+              const recommendedShelter: NearbyShelter =
+                await decisionResponse.json();
+
+              if (generation !== loadGenerationRef.current) {
+                return;
+              }
+
+                setBestShelter(recommendedShelter);
+                setRecommendationReason(
+                  recommendedShelter.recommendation_reason ?? null
+                );
+                return;
+            }
+
+            console.log(
+              'Decision engine recommendation failed, falling back:',
+              decisionResponse.status
+            );
+          } catch (error) {
+            console.log(
+              'Failed to load decision engine recommendation, falling back:',
+              error
+            );
+          }
+        }
+
+        // Fallback keeps the previous recommendation flow available.
+        const fallbackEndpoint = useEmergencyMode
+          ? `${API_BASE_URL}/recommendations/nearby-emergency-shelters`
+          : `${API_BASE_URL}/recommendations/nearby-shelters`;
+
+        const response = await fetch(fallbackEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user_latitude: latitude,
+            user_longitude: longitude,
+            limit: 10,
+            current_city: cityName,
+          }),
+        });
+
+        if (generation !== loadGenerationRef.current) {
+          return;
+        }
+
+        if (!response.ok) {
+          console.log('Failed to load nearby shelters for recommendation');
+          setBestShelter(null);
+          setRecommendationReason(null);
+          return;
+        }
+
+        const data: NearbyShelter[] = await response.json();
+
+        const sheltersWithSummaries =
+          await enrichSheltersWithFeedbackSummary(data);
+
+        if (generation !== loadGenerationRef.current) {
+          return;
+        }
+
+        const recommendation = chooseRecommendedShelter(
+          sheltersWithSummaries,
+          preferences
+        );
+
+        setBestShelter(recommendation.shelter);
+        setRecommendationReason(
+          recommendation.recommendationReason
+        );
+      } catch (error) {
+        console.log('Failed to load recommended shelter:', error);
+
+        if (generation === loadGenerationRef.current) {
+          setBestShelter(null);
+          setRecommendationReason(null);
+        }
+      } finally {
+        if (generation === loadGenerationRef.current) {
+          setLoadingBestShelter(false);
+        }
       }
-
-      if (!response.ok) {
-        console.log('Failed to load nearby shelters for recommendation');
-        setBestShelter(null);
-        setRecommendationReason(null);
-        return;
-      }
-
-      const data: NearbyShelter[] = await response.json();
-      const sheltersWithSummaries = await enrichSheltersWithFeedbackSummary(data);
-
-      if (generation !== loadGenerationRef.current) {
-        return;
-      }
-
-      const recommendation = chooseRecommendedShelter(
-        sheltersWithSummaries,
-        preferences
-      );
-
-      setBestShelter(recommendation.shelter);
-      setRecommendationReason(recommendation.recommendationReason);
-    } catch (error) {
-      console.log('Failed to load recommended shelter:', error);
-
-      if (generation === loadGenerationRef.current) {
-        setBestShelter(null);
-        setRecommendationReason(null);
-      }
-    } finally {
-      if (generation === loadGenerationRef.current) {
-        setLoadingBestShelter(false);
-      }
-    }
-  };
+    };
 
   // The Journey is the source of truth for the user's active destination.
   // Checked on every load regardless of whether GPS succeeded this time —

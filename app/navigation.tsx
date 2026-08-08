@@ -570,7 +570,7 @@ export default function NavigationScreen() {
                         textAlign: 'right',
                       }}
                     >
-                      לחץ כאן כדי לבדוק אם הצלחת להיכנס
+                                 ‎לחץ כאן כדי לדווח לנו
                     </Text>
                   </View>
                   <Ionicons name="chevron-back" size={18} color="#15803D" />

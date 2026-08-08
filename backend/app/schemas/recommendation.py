@@ -58,6 +58,8 @@ class BestShelterResponse(BaseModel):
 
     # Indicates whether the shelter came from an official or community source.
     source: str
+    
+    recommendation_reason: Optional[str] = None
 
     class Config:
         # Allow creating this response model directly from ORM objects.
