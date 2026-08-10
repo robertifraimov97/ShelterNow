@@ -2,6 +2,7 @@ import { SafeAreaView, View, Text, StyleSheet, Pressable, ScrollView, Alert } fr
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { API_BASE_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 
 type SubmittedShelter = {
   id: number;
@@ -23,6 +24,8 @@ type SubmittedShelter = {
 export default function MySubmittedSheltersScreen() {
   // Router instance used for screen navigation.
   const router = useRouter();
+    
+  const { token, isAuthenticated } = useAuth();
 
   // Local state for submitted shelters loaded from the backend.
   const [submittedShelters, setSubmittedShelters] = useState<SubmittedShelter[]>([]);
@@ -33,29 +36,54 @@ export default function MySubmittedSheltersScreen() {
   // Track which shelter is currently being deleted.
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  const loadSubmittedShelters = async () => {
-    try {
-      setLoading(true);
+    const loadSubmittedShelters = async () => {
+      try {
+        setLoading(true);
 
-      // Load all submitted shelters from the backend API.
-      const response = await fetch(`${API_BASE_URL}/submitted-shelters/`);
-      const data = await response.json();
+        if (!token || !isAuthenticated) {
+          setSubmittedShelters([]);
+          return;
+        }
 
-      setSubmittedShelters(data);
-    } catch (error) {
-      console.log('Failed to load submitted shelters:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+        // Load only the authenticated user's submitted shelters.
+        const response = await fetch(`${API_BASE_URL}/submitted-shelters/`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-  useFocusEffect(
-    useCallback(() => {
-      // Reload the list every time the screen comes into focus.
-      loadSubmittedShelters();
-    }, [])
-  );
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.log('Failed to load submitted shelters:', errorText);
+          setSubmittedShelters([]);
+          return;
+        }
 
+        const data: unknown = await response.json();
+
+        if (!Array.isArray(data)) {
+          console.log('Unexpected submitted shelters response:', data);
+          setSubmittedShelters([]);
+          return;
+        }
+
+        setSubmittedShelters(data as SubmittedShelter[]);
+      } catch (error) {
+        console.log('Failed to load submitted shelters:', error);
+        setSubmittedShelters([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    useFocusEffect(
+      useCallback(() => {
+        loadSubmittedShelters();
+      }, [token, isAuthenticated])
+    );
+    
+    
   const getStatusLabel = (status: string) => {
     // Convert backend status values into user-friendly text.
     if (status === 'approved') return 'Approved';
@@ -64,15 +92,25 @@ export default function MySubmittedSheltersScreen() {
   };
 
   const handleDeleteShelter = async (shelterId: number) => {
+      if (!token || !isAuthenticated) {
+        Alert.alert(
+          'Sign in required',
+          'You must be signed in to delete a shelter.'
+        );
+        return;
+      }
     try {
       setDeletingId(shelterId);
 
       // Send a DELETE request to remove the selected shelter.
       const response = await fetch(
         `${API_BASE_URL}/submitted-shelters/${shelterId}`,
-        {
-          method: 'DELETE',
-        }
+            {
+                method: 'DELETE',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            }
       );
 
       // If the backend returns an error, show feedback and stop.

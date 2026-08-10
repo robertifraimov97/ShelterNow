@@ -274,19 +274,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#B91C1C',
   },
-  areaCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 10,
-  },
-  areaName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
+
+    areaCard: {
+      backgroundColor: '#FFFFFF',
+      borderRadius: 18,
+      padding: 18,
+      paddingLeft: 120,
+      borderWidth: 1,
+      borderColor: '#E2E8F0',
+      gap: 10,
+      position: 'relative',
+      minHeight: 78,
+      justifyContent: 'center',
+    },
+
+    areaName: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: '#0F172A',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+
   statusBadge: {
     alignSelf: 'flex-start',
     backgroundColor: '#E8F1FB',
@@ -299,13 +308,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1D4ED8',
   },
+
   removeButton: {
-    alignSelf: 'flex-start',
+    position: 'absolute',
+    left: 18,
+    top: 18,
     backgroundColor: '#FEE2E2',
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 12,
   },
+
   removeButtonDisabled: {
     opacity: 0.6,
   },

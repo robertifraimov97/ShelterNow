@@ -12,10 +12,13 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { API_BASE_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function EditSubmittedShelterScreen() {
   // Router instance used for navigation.
   const router = useRouter();
+    
+  const { token, isAuthenticated } = useAuth();
 
   // Read the shelter data passed from the previous screen.
   const params = useLocalSearchParams();
@@ -46,6 +49,14 @@ export default function EditSubmittedShelterScreen() {
       );
       return;
     }
+      
+      if (!token || !isAuthenticated) {
+        Alert.alert(
+          'Sign in required',
+          'You must be signed in to edit a submitted shelter.'
+        );
+        return;
+      }
 
     try {
       setLoading(true);
@@ -55,9 +66,10 @@ export default function EditSubmittedShelterScreen() {
         `${API_BASE_URL}/submitted-shelters/${shelterId}`,
         {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
           body: JSON.stringify({
             name: shelterName.trim(),
             city: city.trim(),

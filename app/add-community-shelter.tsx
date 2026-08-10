@@ -12,10 +12,12 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { API_BASE_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function AddCommunityShelterScreen() {
   // Router instance used for navigation after successful submission.
   const router = useRouter();
+  const { token, isAuthenticated } = useAuth();
 
   // Local form state for the shelter submission form.
   const [shelterName, setShelterName] = useState('');
@@ -35,6 +37,14 @@ export default function AddCommunityShelterScreen() {
       return;
     }
 
+      if (!token || !isAuthenticated) {
+        Alert.alert(
+          'Sign in required',
+          'You must be signed in to submit a shelter.'
+        );
+        return;
+      }
+      
     try {
       setLoading(true);
 
@@ -42,9 +52,10 @@ export default function AddCommunityShelterScreen() {
       // not directly as an active community shelter.
       const response = await fetch(`${API_BASE_URL}/submitted-shelters/`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
         body: JSON.stringify({
           name: shelterName.trim(),
           city: city.trim(),

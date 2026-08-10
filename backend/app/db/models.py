@@ -59,6 +59,15 @@ class SubmittedShelter(Base):
     __tablename__ = "submitted_shelters"
 
     id = Column(Integer, primary_key=True, index=True)
+    
+    # Authenticated user who created this shelter submission.
+    # Nullable to preserve existing submissions created before ownership tracking.
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
 
     # Basic shelter information submitted by the user.
 

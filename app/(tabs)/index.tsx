@@ -993,7 +993,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.statusCard}>
-          <Text style={styles.statusLabel}>Status</Text>
+          <Text style={styles.statusLabel}>Alert Status</Text>
           <Text
             style={[
               styles.statusValue,

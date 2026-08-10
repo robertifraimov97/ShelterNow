@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.db.models import SubmittedShelter, CommunityShelter
+from app.db.models import SubmittedShelter, CommunityShelter, User
+from app.services.auth import get_current_user
 from app.schemas.submitted_shelter import (
     SubmittedShelterCreate,
     SubmittedShelterUpdate,
@@ -39,16 +40,25 @@ def find_matching_community_shelter(
 
 
 @router.get("/", response_model=list[SubmittedShelterResponse])
-def get_submitted_shelters(db: Session = Depends(get_db)):
-    # Return all submitted shelters from the database.
-    submitted_shelters = db.query(SubmittedShelter).all()
+def get_submitted_shelters(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Return only shelters submitted by the authenticated user.
+    submitted_shelters = (
+        db.query(SubmittedShelter)
+        .filter(SubmittedShelter.user_id == current_user.id)
+        .all()
+    )
+
     return submitted_shelters
 
 
 @router.post("/", response_model=SubmittedShelterResponse)
 def create_submitted_shelter(
     submitted_shelter: SubmittedShelterCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     # Try to geocode the submitted address into coordinates.
     coordinates = geocode_address(
@@ -60,8 +70,9 @@ def create_submitted_shelter(
     latitude = coordinates["latitude"] if coordinates else None
     longitude = coordinates["longitude"] if coordinates else None
 
-    # Create a new submitted shelter record.
+    # Create a new submitted shelter owned by the authenticated user.
     new_submitted_shelter = SubmittedShelter(
+        user_id=current_user.id,
         name=submitted_shelter.name,
         city=submitted_shelter.city,
         address=submitted_shelter.address,
@@ -75,7 +86,6 @@ def create_submitted_shelter(
         review_notes=submitted_shelter.review_notes,
     )
 
-    # Save the new shelter in the database.
     db.add(new_submitted_shelter)
     db.commit()
     db.refresh(new_submitted_shelter)
@@ -87,14 +97,19 @@ def create_submitted_shelter(
 def update_submitted_shelter(
     submitted_shelter_id: int,
     submitted_shelter_update: SubmittedShelterUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    # Find the submitted shelter by its ID.
-    submitted_shelter = db.query(SubmittedShelter).filter(
-        SubmittedShelter.id == submitted_shelter_id
-    ).first()
+    # Find the submitted shelter only if it belongs to the authenticated user.
+    submitted_shelter = (
+        db.query(SubmittedShelter)
+        .filter(
+            SubmittedShelter.id == submitted_shelter_id,
+            SubmittedShelter.user_id == current_user.id,
+        )
+        .first()
+    )
 
-    # Return 404 if the shelter does not exist.
     if not submitted_shelter:
         raise HTTPException(status_code=404, detail="Submitted shelter not found")
 
@@ -110,7 +125,6 @@ def update_submitted_shelter(
             db.delete(matching_community_shelter)
             db.flush()
 
-    # Re-geocode the updated address to refresh coordinates.
     coordinates = geocode_address(
         address=submitted_shelter_update.address,
         city=submitted_shelter_update.city,
@@ -119,20 +133,19 @@ def update_submitted_shelter(
     latitude = coordinates["latitude"] if coordinates else None
     longitude = coordinates["longitude"] if coordinates else None
 
-    # Update editable fields.
     submitted_shelter.name = submitted_shelter_update.name
     submitted_shelter.city = submitted_shelter_update.city
     submitted_shelter.address = submitted_shelter_update.address
     submitted_shelter.notes = submitted_shelter_update.notes
-    submitted_shelter.accessibility_notes = submitted_shelter_update.accessibility_notes
+    submitted_shelter.accessibility_notes = (
+        submitted_shelter_update.accessibility_notes
+    )
     submitted_shelter.latitude = latitude
     submitted_shelter.longitude = longitude
 
-    # Any edit should return the shelter to pending review.
     submitted_shelter.submission_status = "pending"
     submitted_shelter.review_notes = None
 
-    # Save changes to the database.
     db.commit()
     db.refresh(submitted_shelter)
 
@@ -224,14 +237,19 @@ def reject_submitted_shelter(
 @router.delete("/{submitted_shelter_id}")
 def delete_submitted_shelter(
     submitted_shelter_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    # Find the submitted shelter by its database ID.
-    submitted_shelter = db.query(SubmittedShelter).filter(
-        SubmittedShelter.id == submitted_shelter_id
-    ).first()
+    # Find the shelter only if it belongs to the authenticated user.
+    submitted_shelter = (
+        db.query(SubmittedShelter)
+        .filter(
+            SubmittedShelter.id == submitted_shelter_id,
+            SubmittedShelter.user_id == current_user.id,
+        )
+        .first()
+    )
 
-    # Return 404 if the shelter does not exist.
     if not submitted_shelter:
         raise HTTPException(status_code=404, detail="Submitted shelter not found")
 
@@ -246,7 +264,6 @@ def delete_submitted_shelter(
             db.delete(matching_community_shelter)
             db.flush()
 
-    # Delete the submitted shelter itself.
     db.delete(submitted_shelter)
     db.commit()
 
