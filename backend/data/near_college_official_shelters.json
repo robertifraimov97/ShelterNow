@@ -1,0 +1,41 @@
+[
+  {
+    "name": "קהילת לודז' 10",
+    "city": "Tel Aviv-Yafo",
+    "address": "קהילת לודז' 10",
+    "latitude": 32.109738,
+    "longitude": 34.817229,
+    "shelter_type": "public_shelter",
+    "source_type": "official_municipality",
+    "source_name": "Tel Aviv Municipality",
+    "source_url": null,
+    "accessibility_notes": null,
+    "status": "unknown"
+  },
+  {
+    "name": "קהילת קראקוב 4",
+    "city": "Tel Aviv-Yafo",
+    "address": "קהילת קראקוב 4",
+    "latitude": 32.110525,
+    "longitude": 34.821332,
+    "shelter_type": "public_shelter",
+    "source_type": "official_municipality",
+    "source_name": "Tel Aviv Municipality",
+    "source_url": null,
+    "accessibility_notes": null,
+    "status": "unknown"
+  },
+  {
+    "name": "זכות משה 10",
+    "city": "Tel Aviv-Yafo",
+    "address": "זכות משה 10",
+    "latitude": 32.108616,
+    "longitude": 34.817906,
+    "shelter_type": "public_shelter",
+    "source_type": "official_municipality",
+    "source_name": "Tel Aviv Municipality",
+    "source_url": null,
+    "accessibility_notes": null,
+    "status": "unknown"
+  }
+]
