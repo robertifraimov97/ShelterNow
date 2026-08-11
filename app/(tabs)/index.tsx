@@ -277,6 +277,12 @@ export default function HomeScreen() {
 
   // Stores the polyline points for the walking route to the best shelter.
   const [walkingRoute, setWalkingRoute] = useState<RoutePoint[]>([]);
+    
+  // Stores the real walking-route distance returned by OpenRouteService.
+  const [walkingRouteDistance, setWalkingRouteDistance] = useState<number | null>(null);
+
+  // Stores the real walking-route duration returned by OpenRouteService.
+  const [walkingRouteDuration, setWalkingRouteDuration] = useState<number | null>(null);
 
   // Tracks whether the best shelter data is currently loading.
   const [loadingBestShelter, setLoadingBestShelter] = useState(true);
@@ -635,39 +641,46 @@ export default function HomeScreen() {
   };
 
   // Loads the walking route from the user's location to the selected shelter.
-  const loadWalkingRoute = async (
-    startLatitude: number,
-    startLongitude: number,
-    endLatitude: number,
-    endLongitude: number
-  ) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/routing/walking-route`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          start_latitude: startLatitude,
-          start_longitude: startLongitude,
-          end_latitude: endLatitude,
-          end_longitude: endLongitude,
-        }),
-      });
+    const loadWalkingRoute = async (
+      startLatitude: number,
+      startLongitude: number,
+      endLatitude: number,
+      endLongitude: number
+    ) => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/routing/walking-route`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            start_latitude: startLatitude,
+            start_longitude: startLongitude,
+            end_latitude: endLatitude,
+            end_longitude: endLongitude,
+          }),
+        });
 
-      if (!response.ok) {
-        console.log('Failed to load walking route');
+        if (!response.ok) {
+          console.log('Failed to load walking route');
+          setWalkingRoute([]);
+          setWalkingRouteDistance(null);
+          setWalkingRouteDuration(null);
+          return;
+        }
+
+        const data: WalkingRouteResponse = await response.json();
+
+        setWalkingRoute(data.route_coordinates || []);
+        setWalkingRouteDistance(data.distance_meters);
+        setWalkingRouteDuration(data.duration_seconds);
+      } catch (error) {
+        console.log('Failed to load walking route:', error);
         setWalkingRoute([]);
-        return;
+        setWalkingRouteDistance(null);
+        setWalkingRouteDuration(null);
       }
-
-      const data: WalkingRouteResponse = await response.json();
-      setWalkingRoute(data.route_coordinates || []);
-    } catch (error) {
-      console.log('Failed to load walking route:', error);
-      setWalkingRoute([]);
-    }
-  };
+    };
 
   // Loads all main screen data. A GPS failure never skips the active-Journey
   // check (see loadBestShelterForHome) — it only means coords/cityName stay
@@ -970,19 +983,21 @@ export default function HomeScreen() {
   );
 
   // Whenever the user location or best shelter changes, reload the walking route between them.
-  useEffect(() => {
-    if (!userLocation || !bestShelter) {
-      setWalkingRoute([]);
-      return;
-    }
+    useEffect(() => {
+      if (!userLocation || !bestShelter) {
+        setWalkingRoute([]);
+        setWalkingRouteDistance(null);
+        setWalkingRouteDuration(null);
+        return;
+      }
 
-    loadWalkingRoute(
-      userLocation.latitude,
-      userLocation.longitude,
-      bestShelter.latitude,
-      bestShelter.longitude
-    );
-  }, [userLocation, bestShelter]);
+      loadWalkingRoute(
+        userLocation.latitude,
+        userLocation.longitude,
+        bestShelter.latitude,
+        bestShelter.longitude
+      );
+    }, [userLocation, bestShelter]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1020,9 +1035,14 @@ export default function HomeScreen() {
               {isBestShelterDistanceUnavailable ? (
                 <Text style={styles.cardMeta}>המרחק יתעדכן כשהמיקום יחזור</Text>
               ) : (
-                <Text style={styles.cardMeta}>
-                  {formatDistance(bestShelter.distance_meters)} • {bestShelter.estimated_walk_minutes} min walk
-                </Text>
+                   <Text style={styles.cardMeta}>
+                     {walkingRouteDistance !== null && walkingRouteDuration !== null
+                       ? `${formatDistance(walkingRouteDistance)} • ${Math.max(
+                           1,
+                           Math.round(walkingRouteDuration / 60)
+                         )} min walk`
+                       : `${formatDistance(bestShelter.distance_meters)} • ${bestShelter.estimated_walk_minutes} min walk`}
+                   </Text>
               )}
 
               <Text style={styles.cardSource}>
